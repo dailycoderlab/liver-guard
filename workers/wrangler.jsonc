@@ -1,0 +1,24 @@
+{
+  "name": "sky-platform",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./console/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "RecordingHub" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RecordingHub"] }
+  ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "sky", "database_id": "local-sky-replace-on-deploy" }
+  ],
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "sky-assets" }
+  ],
+  "observability": { "enabled": true }
+}
