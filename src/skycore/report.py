@@ -56,6 +56,12 @@ class Reporter:
     aggregates: dict[tuple[str, str], Aggregate] = field(default_factory=dict)
     log_lines: list[dict[str, Any]] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _subscribers: list[Any] = field(default_factory=list)
+
+    def subscribe(self, callback: Any) -> None:
+        """订阅每条日志；GUI 用它实时显示点击坐标。"""
+        with self._lock:
+            self._subscribers.append(callback)
 
     # ------------------------------------------------------------- producers
 
@@ -70,6 +76,23 @@ class Reporter:
             item["payload"] = payload
         with self._lock:
             self.log_lines.append(item)
+            subscribers = list(self._subscribers)
+        # 回调在锁外执行：订阅者可能很慢，不能拖住运行线程。
+        # Callbacks run outside the lock so a slow subscriber cannot stall the run.
+        for callback in subscribers:
+            try:
+                callback(level, event, payload or {})
+            except Exception as error:  # noqa: BLE001 - a broken subscriber must not break the run
+                # 订阅者（GUI）出错不能中断脚本执行，只记一条 warn。
+                # A failing subscriber (the GUI) must not abort the script run.
+                with self._lock:
+                    self.log_lines.append({
+                        "runId": self.run_id,
+                        "ts": int(time.time() * 1000),
+                        "level": "warn",
+                        "event": "log_subscriber_failed",
+                        "payload": {"error": str(error)},
+                    })
 
     def score(self, step_id: str, target_id: str, score: float, strategy: str, ms: float, reused: bool) -> None:
         with self._lock:

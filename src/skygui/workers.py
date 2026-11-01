@@ -6,6 +6,9 @@ class TaskSignals(QObject):
     done = Signal(object)
     failed = Signal(str)
     progress = Signal(object)
+    # (level, event, payload) 三元组：运行日志需要带上事件类型和参数。
+    # (level, event, payload) so the run log can render typed events.
+    log = Signal(str, str, object)
 
 
 class TaskDispatcher(QObject):

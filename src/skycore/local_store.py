@@ -58,21 +58,42 @@ class LocalStore:
         with self._lock:
             return json.loads(self._script_path(script_id).read_text('utf-8'))
 
-    def create_script(self, name: str, draft: dict) -> dict:
+    def create_script(self, name: str, ir: dict) -> dict:
         name = name.strip()
         if not name:
             raise ValueError('脚本名称不能为空')
-        script = {'id': uuid.uuid4().hex, 'name': name, 'currentVersion': 0,
-                  'draft': draft, 'versions': {}}
+        # 只有一个内容字段：编辑、保存就是改它，没有草稿/已发布之分。
+        # A single content field: saving edits it, with no draft/published split.
+        script = {'id': uuid.uuid4().hex, 'name': name, 'ir': ir}
         with self._lock:
             self._write_json(self._script_path(script['id']), script)
         return script
 
-    def save_draft(self, script_id: str, draft: dict) -> None:
+    def save_script(self, script_id: str, ir: dict) -> None:
         with self._lock:
             script = self.get_script(script_id)
-            script['draft'] = draft
+            script['ir'] = ir
             self._write_json(self._script_path(script_id), script)
+
+    def script_ir(self, script: dict) -> dict:
+        """读取脚本内容，兼容只有旧版草稿/版本记录的脚本文件。
+
+        旧文件里发布版本才是"能跑的内容"，但草稿是用户最后一次编辑的结果，
+        取消发布状态后它就是唯一内容，因此优先取草稿。
+        Old records kept a draft plus published versions; the draft is what the
+        user last edited, so it becomes the single content after this change.
+        """
+        if isinstance(script.get('ir'), dict):
+            return script['ir']
+        if isinstance(script.get('draft'), dict):
+            return script['draft']
+        versions = script.get('versions')
+        if isinstance(versions, dict) and versions:
+            current = str(script.get('currentVersion'))
+            if current in versions:
+                return versions[current]
+            return versions[max(versions, key=str)]
+        raise ValueError('脚本内容为空')
 
     def rename(self, script_id: str, name: str) -> None:
         name = name.strip()
@@ -81,23 +102,14 @@ class LocalStore:
         with self._lock:
             script = self.get_script(script_id)
             script['name'] = name
-            if script.get('draft'):
-                script['draft']['meta']['name'] = name
+            content = script.get('ir') or script.get('draft')
+            if isinstance(content, dict) and isinstance(content.get('meta'), dict):
+                content['meta']['name'] = name
             self._write_json(self._script_path(script_id), script)
 
     def delete(self, script_id: str) -> None:
         with self._lock:
             self._script_path(script_id).unlink()
-
-    def publish(self, script_id: str, draft: dict) -> int:
-        with self._lock:
-            script = self.get_script(script_id)
-            version = script['currentVersion'] + 1
-            script['draft'] = draft
-            script['versions'][str(version)] = draft
-            script['currentVersion'] = version
-            self._write_json(self._script_path(script_id), script)
-            return version
 
     def put_asset(self, sha: str, payload: bytes) -> None:
         if hashlib.sha256(payload).hexdigest() != sha:
@@ -141,7 +153,7 @@ class LocalStore:
                     destination = self._script_path(script_id)
                     if not destination.exists():
                         self._write_json(destination, {'id': script_id, 'name': name + '（恢复的草稿）',
-                            'currentVersion': 0, 'draft': draft, 'versions': {}, 'legacySource': source})
+                            'ir': draft, 'legacySource': source})
                         count += 1
                     imported.add(source)
                     self._write_json(marker, sorted(imported))

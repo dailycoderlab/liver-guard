@@ -6,6 +6,7 @@ input injection never interleave with the GUI thread.
 
 from __future__ import annotations
 
+import random
 import re
 import threading
 import time
@@ -256,17 +257,107 @@ class Interpreter:
         hit = self.ctx.find(name, step_id)
         if hit is None:
             raise RunError("not_found", f'target "{name}" not found', step_id)
-        self.ctx.reporter.log("debug", "tap", {"stepId": step_id, "target": name, "score": round(hit.score, 3)})
-        self.ctx.driver.tap(hit.point[0], hit.point[1], int(step.get("durationMs", 60)))
-        self.ctx.record_action(step_id, name)
+        self.jittered_click(step, step_id, name, hit, int(step.get("durationMs", 60)))
 
     def op_longPress(self, step: dict[str, Any], step_id: str) -> None:
         name = require_target(step, step_id)
         hit = self.ctx.find(name, step_id)
         if hit is None:
             raise RunError("not_found", f'target "{name}" not found', step_id)
-        self.ctx.driver.tap(hit.point[0], hit.point[1], int(step.get("durationMs", 600)))
+        self.jittered_click(step, step_id, name, hit, int(step.get("durationMs", 600)))
+
+    def jittered_click(self, step: dict[str, Any], step_id: str, name: str, hit: Hit, duration_ms: int) -> None:
+        """带随机延迟和区域内随机偏移的点击，并记录实际坐标与时间。
+
+        延迟先于偏移计算：延迟是"像人在操作"，偏移是"点在控件里不同位置"，
+        两者都不依赖匹配结果，所以可以合并在一次日志里输出，方便对照。
+        The delay runs before the offset is applied so one log line can report
+        both the wait and the resolved point.
+        """
+        delay_ms = self.random_delay_ms(step)
+        if delay_ms > 0:
+            sleep_interruptible(delay_ms, self.ctx.stop_event)
+            self.check_deadline(step_id)
+
+        jitter = self.random_offset(step, step_id)
+        point = hit.point
+        if jitter != (0.0, 0.0):
+            point = self.clamp_to_box(
+                point[0] + jitter[0] * hit.box.w,
+                point[1] + jitter[1] * hit.box.h,
+                hit.box,
+            )
+        self.ctx.driver.tap(point[0], point[1], duration_ms)
+        self.ctx.reporter.log(
+            "info",
+            "tap",
+            {
+                "stepId": step_id,
+                "target": name,
+                "score": round(hit.score, 3),
+                "x": round(point[0], 2),
+                "y": round(point[1], 2),
+                "anchorX": round(hit.point[0], 2),
+                "anchorY": round(hit.point[1], 2),
+                "dx": round(point[0] - hit.point[0], 2),
+                "dy": round(point[1] - hit.point[1], 2),
+                "delayMs": int(delay_ms),
+                "boxW": round(hit.box.w, 1),
+                "boxH": round(hit.box.h, 1),
+                "at": time.strftime("%H:%M:%S", time.localtime()),
+                "strategy": hit.strategy,
+            },
+        )
         self.ctx.record_action(step_id, name)
+
+    @staticmethod
+    def clamp_to_box(x: float, y: float, box) -> tuple[float, float]:
+        """把抖动后的点夹回识别区域，避免偏移把点击推到控件外。
+
+        偏移是按区域宽高算的，极端配置下 anchor 加偏移会越界；夹住比让脚本
+        点空更安全，日志里的 dx/dy 仍会反映实际落点。
+        A large enough offset can push the point outside the matched box; clamping
+        keeps the click on the control, and dx/dy still report where it landed.
+        """
+        return (min(max(x, box.x), box.x + box.w), min(max(y, box.y), box.y + box.h))
+
+    def random_delay_ms(self, step: dict[str, Any]) -> float:
+        """步骤的随机等待毫秒数；未配置时返回 0。
+
+        支持 ``delayMs`` 固定值，或 ``delayRangeMs`` 区间；两者都有时把固定值
+        当作下限之上再加抖动，便于"至少等这么久，再多等一会儿"。
+        Supports a fixed ``delayMs`` or a ``delayRangeMs`` span; given both, the
+        fixed value acts as a floor with the span added on top.
+        """
+        delay_ms = max(0.0, float_attr(step.get("delayMs"), 0.0))
+        span = step.get("delayRangeMs")
+        if isinstance(span, (list, tuple)) and len(span) == 2:
+            low = max(0.0, float_attr(span[0], 0.0))
+            high = max(low, float_attr(span[1], low))
+            return delay_ms + random.uniform(low, high)
+        return delay_ms
+
+    def random_offset(self, step: dict[str, Any], step_id: str) -> tuple[float, float]:
+        """识别区域内的随机偏移，单位是区域宽高的比例。
+
+        ``offsetRatio`` 是相对区域宽高的最大偏移比例；``0.2`` 表示在区域中心
+        附近 ±20% 宽高的矩形内取点（再被夹回区域），所以不会点到控件外面。
+        ``offsetRatio`` is the maximum offset as a fraction of the box size, so
+        0.2 picks a point within ±20% of the box around the anchor.
+        """
+        ratio = float_attr(step.get("offsetRatio"), 0.0)
+        if ratio <= 0:
+            return (0.0, 0.0)
+        if ratio > 0.5:
+            # 超过半个区域已经超出"区域内"的语义，上限收在 0.5。
+            # More than half a box is no longer "inside the region".
+            self.ctx.reporter.log(
+                "warn",
+                "offset_clamped",
+                {"stepId": step_id, "requested": ratio, "used": 0.5},
+            )
+            ratio = 0.5
+        return (random.uniform(-ratio, ratio), random.uniform(-ratio, ratio))
 
     def op_swipe(self, step: dict[str, Any], step_id: str) -> None:
         start_name = step.get("from")
@@ -468,6 +559,14 @@ def require_target(step: dict[str, Any], step_id: str) -> str:
 
 def as_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def float_attr(value: Any, default: float) -> float:
+    """宽松读取一个数值步骤字段；非数字时退回默认值而不是抛错。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def sleep_interruptible(ms: float, stop_event: threading.Event) -> None:

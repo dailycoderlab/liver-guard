@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 
+from skycore.local_store import LocalStore
 from skycore.matcher import AssetStore, MatcherEngine
 from skycore.report import NullReporter
 from skycore.runtime import RunContext, execute
@@ -45,7 +46,6 @@ def build_parser() -> argparse.ArgumentParser:
         source = command.add_mutually_exclusive_group(required=True)
         source.add_argument("--script", help="local script id in ~/.sky/scripts")
         source.add_argument("--file", help="local IR JSON file")
-        command.add_argument("--version", default=None, help="published script version (default: current)")
         command.add_argument("--assets", default=None, help="local asset directory (default ~/.sky/assets)")
         command.add_argument("--window", default=None)
         if name == "run":
@@ -95,6 +95,15 @@ def cmd_doctor(args) -> int:
     print("权限")
     print(f"  辅助功能    {'ok' if state.accessibility else 'MISSING'}")
     print(f"  屏幕录制    {'ok' if state.screen_recording else 'MISSING'}")
+    host = permissions.responsible_application()
+    if host is None:
+        print("  归属应用    未知（进程树里没有找到 app bundle）")
+    else:
+        name, path = host
+        print(f"  归属应用    {name}（{path}）")
+        if not path.endswith("Sky.app"):
+            print("              开发态运行：Sky 没有独立的应用条目，权限记在上面这个宿主应用上；")
+            print("              若要在系统设置里单独看到 Sky，请运行打包后的 Sky.app。")
     for problem in state.problems():
         print(f"  ! {problem}")
     print()
@@ -179,10 +188,8 @@ def cmd_capture(args) -> int:
 
 
 def _load_ir(args) -> IRDoc:
-    """Read an IR file or a published version of a local script."""
+    """Read an IR file or the current content of a local script."""
     if args.file:
-        if args.version is not None:
-            raise ValueError("--version requires --script")
         data = json.loads(Path(args.file).read_text(encoding="utf-8"))
     else:
         script_id = args.script
@@ -192,13 +199,9 @@ def _load_ir(args) -> IRDoc:
         script = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(script, dict) or script.get("id") != script_id:
             raise ValueError(f"invalid local script record: {path}")
-        versions = script.get("versions")
-        if not isinstance(versions, dict):
-            raise ValueError(f"local script has no published versions: {script_id}")
-        version = args.version if args.version is not None else script.get("currentVersion")
-        if version is None or str(version) not in versions:
-            raise ValueError(f"published version {version!r} not found for script {script_id}")
-        data = versions[str(version)]
+        # 脚本只有一份内容；同时兼容旧文件里的草稿/版本记录。
+        # A script has a single content field; older drafts/versions still load.
+        data = LocalStore(SCRIPT_DIR.parent).script_ir(script)
     return IRDoc.model_validate(data)
 
 

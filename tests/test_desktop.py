@@ -26,7 +26,7 @@ def test_preview_is_above_status_in_right_column(tmp_path, monkeypatch):
     window.close()
 
 
-def test_script_draft_edit_persists_and_reopens(tmp_path, monkeypatch):
+def test_script_edit_persists_and_reopens(tmp_path, monkeypatch):
     import skygui.main_window as gui
     monkeypatch.setattr(gui, 'HOME', tmp_path)
     app = QApplication.instance() or QApplication([])
@@ -36,18 +36,41 @@ def test_script_draft_edit_persists_and_reopens(tmp_path, monkeypatch):
     window.open_script(window.scripts.item(0))
     window.ir['blocks']['main'].append({'op': 'sleep', 'id': 's1', 'ms': 100})
     window.changed()
+    # 编辑即落盘，没有草稿/发布两态。
+    # Editing writes straight to disk; there is no draft/published split.
     assert not window.pending_save
-    assert window.store.get_script(script['id'])['draft']['blocks']['main'][0]['ms'] == 100
-    window.publish()
-    assert window.store.get_script(script['id'])['versions']['1']['blocks']['main'][0]['ms'] == 100
+    assert window.store.get_script(script['id'])['ir']['blocks']['main'][0]['ms'] == 100
     window._quitting = True
     window.close()
     window2 = MainWindow()
     window2.open_script(window2.scripts.item(0))
     assert window2.ir['blocks']['main'][0]['ms'] == 100
-    assert window2.script['currentVersion'] == 1
     window2._quitting = True
     window2.close()
+
+
+def test_explicit_save_writes_even_without_changes(tmp_path, monkeypatch):
+    import skygui.main_window as gui
+    monkeypatch.setattr(gui, 'HOME', tmp_path)
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    script = window.store.create_script('测试', blank_ir('测试'))
+    window.load_scripts()
+    window.open_script(window.scripts.item(0))
+    writes = []
+    original = window.store.save_script
+
+    def counted(script_id, ir):
+        writes.append(script_id)
+        return original(script_id, ir)
+
+    monkeypatch.setattr(window.store, 'save_script', counted)
+    assert window.pending_save is False
+    assert window.save_script()
+    assert writes == [script['id']]
+    assert '已保存' in window.status.text()
+    window._quitting = True
+    window.close()
 
 
 def test_failed_save_keeps_unsaved_draft_and_prevents_switch(tmp_path, monkeypatch):
@@ -63,7 +86,7 @@ def test_failed_save_keeps_unsaved_draft_and_prevents_switch(tmp_path, monkeypat
     monkeypatch.setattr(window, 'error', errors.append)
     def failed(*args):
         raise OSError('disk full')
-    monkeypatch.setattr(window.store, 'save_draft', failed)
+    monkeypatch.setattr(window.store, 'save_script', failed)
     window.ir['blocks']['main'].append({'op': 'sleep', 'id': 's1', 'ms': 10})
     window.changed()
     window.open_script(window.scripts.item(1))

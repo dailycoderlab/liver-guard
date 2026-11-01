@@ -81,11 +81,29 @@ def test_both_commands_accept_local_ir_file(command, tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("command", ["run", "probe"])
-@pytest.mark.parametrize("version,expected", [(None, "published two"), ("1", "published one")])
-def test_local_script_uses_published_version(command, version, expected, monkeypatch, capsys):
+def test_local_script_uses_its_current_content(command, monkeypatch, capsys):
+    write_json(cli.SCRIPT_DIR / "s1.json", {
+        "id": "s1", "name": "Script", "ir": ir("current content"),
+    })
+    seen = []
+    def execute(doc, ctx):
+        seen.append(doc.meta.name)
+        return SimpleNamespace(state="done", step_count=0, error_code=None)
+    monkeypatch.setattr(cli, "execute", execute)
+    assert cli.main([command, "--script", "s1"]) == 0
+    if command == "run":
+        assert seen == ["current content"]
+    else:
+        assert "probe current content" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", ["run", "probe"])
+def test_legacy_script_records_still_load(command, monkeypatch, capsys):
+    # 旧文件里内容躺在 draft 或 versions 里，取消发布状态后必须仍能读到。
+    # Old records kept content in draft or versions; they must still be readable.
     write_json(cli.SCRIPT_DIR / "s1.json", {
         "id": "s1", "name": "Script", "currentVersion": 2,
-        "draft": ir("unpublished draft"),
+        "draft": ir("legacy draft"),
         "versions": {"1": ir("published one"), "2": ir("published two")},
     })
     seen = []
@@ -93,25 +111,19 @@ def test_local_script_uses_published_version(command, version, expected, monkeyp
         seen.append(doc.meta.name)
         return SimpleNamespace(state="done", step_count=0, error_code=None)
     monkeypatch.setattr(cli, "execute", execute)
-    args = [command, "--script", "s1"]
-    if version:
-        args += ["--version", version]
-    assert cli.main(args) == 0
+    assert cli.main([command, "--script", "s1"]) == 0
     if command == "run":
-        assert seen == [expected]
+        assert seen == ["legacy draft"]
     else:
-        assert f"probe {expected}" in capsys.readouterr().out
+        assert "probe legacy draft" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("command", ["run", "probe"])
-def test_unpublished_and_missing_versions_are_errors(command, capsys):
+def test_script_without_content_reports_an_error(command, capsys):
     path = cli.SCRIPT_DIR / "s1.json"
-    write_json(path, {"id": "s1", "currentVersion": 0, "draft": ir("draft"), "versions": {}})
+    write_json(path, {"id": "s1", "name": "empty"})
     assert cli.main([command, "--script", "s1"]) == 1
-    assert "published version" in capsys.readouterr().err
-    write_json(path, {"id": "s1", "currentVersion": 1, "versions": {"1": ir()}})
-    assert cli.main([command, "--script", "s1", "--version", "9"]) == 1
-    assert "published version" in capsys.readouterr().err
+    assert "脚本内容为空" in capsys.readouterr().err
     assert not FakeDriver.instances
 
 
@@ -120,10 +132,10 @@ def test_invalid_sources_fail_cleanly(tmp_path, capsys):
     assert "invalid local script id" in capsys.readouterr().err
     assert cli.main(["probe", "--script", "absent"]) == 1
     assert "absent.json" in capsys.readouterr().err
-    path = tmp_path / "ir.json"
-    write_json(path, ir())
-    assert cli.main(["run", "--file", str(path), "--version", "1"]) == 1
-    assert "--version requires --script" in capsys.readouterr().err
+    # 版本概念已移除，参数不应再被接受。
+    # The version concept is gone, so the flag must not be accepted.
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["run", "--script", "s1", "--version", "1"])
 
 
 def test_run_missing_asset_never_starts_driver(tmp_path, capsys):

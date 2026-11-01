@@ -103,9 +103,17 @@ class MatcherEngine:
         if self.allow_reuse:
             remembered = self.tracker.reusable(target_id, frame_hash)
             if remembered is not None:
+                # 复用路径也要应用抖动，否则连续点击同一目标时偏移只在第一
+                # 次生效，看起来像"偏移没用"。
+                # Reuse must apply the jitter too, otherwise only the first of
+                # several taps on one target would be offset.
+                point = remembered.point
+                if offset != (0.0, 0.0):
+                    point = (point[0] + offset[0] * remembered.box.w,
+                             point[1] + offset[1] * remembered.box.h)
                 return Hit(
                     box=remembered.box,
-                    point=remembered.point,
+                    point=point,
                     score=remembered.score,
                     strategy="reuse",
                     elapsed_ms=(time.perf_counter() - started) * 1000.0,
