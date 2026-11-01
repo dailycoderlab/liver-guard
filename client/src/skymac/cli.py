@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import getpass
 import json
 import logging
-import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from skycore.matcher import AssetStore, MatcherEngine
@@ -21,10 +16,10 @@ from skycore.schema import IRDoc, TemplateTarget
 
 from . import permissions
 from . import window as window_tools
-from .client import CONFIG_PATH, DeviceClient, DeviceConfig
 from .driver import MacDriver
 
 ASSET_DIR = Path.home() / ".sky" / "assets"
+SCRIPT_DIR = Path.home() / ".sky" / "scripts"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,16 +30,6 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check permissions, capture and coordinates")
     doctor.add_argument("--window", default=None, help="check a specific window instead of the whole display")
 
-    enroll = sub.add_parser("enroll", help="register this device with the platform")
-    enroll.add_argument("--server", required=True, help="platform base url, e.g. http://127.0.0.1:8787")
-    enroll.add_argument("--name", default=None, help="device name shown in the console")
-    enroll.add_argument("--window", default=None, help="substring of the window to control; omit for the whole screen")
-    enroll.add_argument(
-        "--force",
-        action="store_true",
-        help="register even though a permission is missing (pipeline testing only: clicks will not land)",
-    )
-
     windows = sub.add_parser("windows", help="list controllable windows")
     windows.add_argument("--all", action="store_true", help="include off-screen and non-zero layers")
 
@@ -52,20 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--out", default="capture.png")
     capture.add_argument("--window", default=None)
 
-    serve = sub.add_parser("serve", help="connect to the platform and stay online")
-    serve.add_argument("--server", default=None, help="override the enrolled server")
-
-    run = sub.add_parser("run", help="run a script locally")
-    run.add_argument("--script", required=True, help="script id on the platform")
-    run.add_argument("--version", type=int, default=None)
-    run.add_argument("--window", default=None)
-    run.add_argument("--max-seconds", type=int, default=None, help="safety limit for a local run")
-
-    probe = sub.add_parser("probe", help="dry run: locate every target, click nothing")
-    probe.add_argument("--script", default=None, help="script id on the platform")
-    probe.add_argument("--file", default=None, help="local IR json")
-    probe.add_argument("--assets", default=None, help="local asset directory (default ~/.sky/assets)")
-    probe.add_argument("--window", default=None)
+    for name, help_text in (
+        ("run", "run a script locally"),
+        ("probe", "dry run: locate every target, click nothing"),
+    ):
+        command = sub.add_parser(name, help=help_text)
+        source = command.add_mutually_exclusive_group(required=True)
+        source.add_argument("--script", help="local script id in ~/.sky/scripts")
+        source.add_argument("--file", help="local IR JSON file")
+        command.add_argument("--version", default=None, help="published script version (default: current)")
+        command.add_argument("--assets", default=None, help="local asset directory (default ~/.sky/assets)")
+        command.add_argument("--window", default=None)
+        if name == "run":
+            command.add_argument("--max-seconds", type=int, default=None, help="safety limit for a local run")
 
     return parser
 
@@ -80,14 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             return cmd_doctor(args)
-        if args.command == "enroll":
-            return cmd_enroll(args)
         if args.command == "windows":
             return cmd_windows(args)
         if args.command == "capture":
             return cmd_capture(args)
-        if args.command == "serve":
-            return cmd_serve(args)
         if args.command == "run":
             return cmd_run(args)
         if args.command == "probe":
@@ -95,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
         return 130
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         print(f"error: {error}", file=sys.stderr)
         if args.verbose:
             raise
@@ -166,72 +146,9 @@ def cmd_doctor(args) -> int:
             print("      录制前把游戏切到前台，或改用整屏捕获（去掉 --window）")
     print()
 
-    print("配置")
-    if CONFIG_PATH.exists():
-        try:
-            config = DeviceConfig.load()
-            print(f"  已注册为 {config.name} ({config.device_id[:8]}…) → {config.server}")
-        except Exception as error:  # noqa: BLE001
-            print(f"  配置文件损坏: {error}")
-    else:
-        print("  未注册。运行 `sky enroll --server <url>`")
-
     return 0 if state.ok else 3
 
 
-# ------------------------------------------------------------------- enroll
-
-
-def cmd_enroll(args) -> int:
-    state = permissions.current_state()
-    if not state.ok:
-        for problem in state.problems():
-            print(f"! {problem}", file=sys.stderr)
-        if not args.force:
-            print("\n权限补齐后重新打开终端再试（或用 --force 只验证链路）。", file=sys.stderr)
-            return 3
-        print("! --force：继续注册，但注入的点击不会真正生效。\n", file=sys.stderr)
-
-    server = args.server.rstrip("/")
-    # SKY_PASSWORD lets CI and scripts enroll without a tty; getpass is only for
-    # interactive use.
-    password = os.environ.get("SKY_PASSWORD") or getpass.getpass("控制台口令: ")
-
-    try:
-        token = _post_json(server + "/v1/auth/login", {"password": password})["token"]
-    except urllib.error.HTTPError as error:
-        print(f"登录失败: HTTP {error.code}", file=sys.stderr)
-        return 4
-
-    driver = MacDriver(window_query=args.window, full_screen=args.window is None)
-    bounds = driver.bounds()
-    caps = driver.caps()
-
-    name = args.name or f"mac-{time.strftime('%H%M')}"
-    payload = {
-        "name": name,
-        "platform": "macos",
-        "caps": caps.to_json(),
-        "screen": {"w": bounds.w, "h": bounds.h, "scale": bounds.scale},
-    }
-    try:
-        result = _post_json(server + "/v1/devices/enroll", payload, token)
-    except urllib.error.HTTPError as error:
-        print(f"注册失败: HTTP {error.code} {error.read()[:200]!r}", file=sys.stderr)
-        return 4
-
-    config = DeviceConfig(
-        server=server,
-        device_id=result["deviceId"],
-        token=result["deviceToken"],
-        name=name,
-        window=args.window,
-    )
-    config.save()
-    print(f"已注册设备 {name} ({config.device_id})")
-    print(f"配置写入 {CONFIG_PATH}")
-    print("下一步: `sky serve`")
-    return 0
 
 
 # ------------------------------------------------------------------ windows
@@ -256,78 +173,48 @@ def cmd_capture(args) -> int:
     return 0
 
 
-# -------------------------------------------------------------------- serve
-
-
-def cmd_serve(args) -> int:
-    if not CONFIG_PATH.exists():
-        print("还没有注册设备，先运行 `sky enroll --server <url>`", file=sys.stderr)
-        return 2
-    config = DeviceConfig.load()
-    if args.server:
-        config.server = args.server.rstrip("/")
-
-    state = permissions.current_state()
-    if not state.ok:
-        for problem in state.problems():
-            print(f"! {problem}", file=sys.stderr)
-
-    client = DeviceClient(config)
-
-    async def runner() -> None:
-        await client.run_forever()
-
-    try:
-        asyncio.run(runner())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        asyncio.run(client.close())
-    return 0
 
 
 # ---------------------------------------------------------------- run/probe
 
 
-def _load_ir(args) -> tuple[IRDoc, str | None]:
-    """Returns the IR and the server base url used to fetch assets."""
+def _load_ir(args) -> IRDoc:
+    """Read an IR file or a published version of a local script."""
     if args.file:
-        ir = IRDoc.model_validate(json.loads(Path(args.file).read_text("utf-8")))
-        return ir, None
+        if args.version is not None:
+            raise ValueError("--version requires --script")
+        data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    else:
+        script_id = args.script
+        if not script_id or script_id in (".", "..") or "/" in script_id or "\\" in script_id:
+            raise ValueError("invalid local script id")
+        path = SCRIPT_DIR / f"{script_id}.json"
+        script = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(script, dict) or script.get("id") != script_id:
+            raise ValueError(f"invalid local script record: {path}")
+        versions = script.get("versions")
+        if not isinstance(versions, dict):
+            raise ValueError(f"local script has no published versions: {script_id}")
+        version = args.version if args.version is not None else script.get("currentVersion")
+        if version is None or str(version) not in versions:
+            raise ValueError(f"published version {version!r} not found for script {script_id}")
+        data = versions[str(version)]
+    return IRDoc.model_validate(data)
 
-    if not args.script:
-        raise SystemExit("either --script or --file is required")
-    config = DeviceConfig.load()
-    bundle = _get_json(config.server + f"/v1/scripts/{args.script}/bundle" + (f"?v={args.version}" if getattr(args, "version", None) else ""), config.token)
-    return IRDoc.model_validate(bundle["ir"]), config.server
 
-
-def _make_assets(server: str | None, token: str | None, directory: str | None) -> AssetStore:
-    cache = Path(directory) if directory else ASSET_DIR
-
-    def fetch(sha: str) -> bytes:
-        if server is None:
-            raise KeyError(sha)
-        headers = {"authorization": f"Bearer {token}"} if token else {}
-        request = urllib.request.Request(f"{server}/v1/assets/{sha}", headers=headers)
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return response.read()
-
-    return AssetStore(cache_dir=cache, fetcher=fetch if server else None)
+def _make_assets(directory: str | None) -> AssetStore:
+    return AssetStore(cache_dir=Path(directory) if directory else ASSET_DIR)
 
 
 def cmd_probe(args) -> int:
-    ir, server = _load_ir(args)
+    ir = _load_ir(args)
     problems = ir.validate()
     if problems:
         for problem in problems:
             print(f"! {problem}", file=sys.stderr)
         return 4
 
-    token = None
-    if server:
-        token = DeviceConfig.load().token
-    assets = _make_assets(server, token, args.assets)
+    assets = _make_assets(args.assets)
 
     driver = MacDriver(window_query=args.window, full_screen=args.window is None)
     driver.activate()
@@ -370,9 +257,8 @@ def cmd_probe(args) -> int:
 
 
 def cmd_run(args) -> int:
-    ir, server = _load_ir(args)
-    config = DeviceConfig.load() if (server or CONFIG_PATH.exists()) else None
-    assets = _make_assets(server, config.token if config else None, None)
+    ir = _load_ir(args)
+    assets = _make_assets(args.assets)
 
     for sha in ir.asset_hashes():
         try:
@@ -405,23 +291,8 @@ def cmd_run(args) -> int:
     return 0 if result.state == "done" else 6
 
 
-# ---------------------------------------------------------------- http utils
 
 
-def _post_json(url: str, payload: dict, token: str | None = None) -> dict:
-    headers = {"content-type": "application/json"}
-    if token:
-        headers["authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read())
-
-
-def _get_json(url: str, token: str | None = None) -> dict:
-    headers = {"authorization": f"Bearer {token}"} if token else {}
-    request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read())
 
 
 if __name__ == "__main__":

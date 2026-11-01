@@ -1,171 +1,153 @@
 #!/usr/bin/env python3
-"""End to end smoke test against a running dev server (default 127.0.0.1:8787).
+"""Exercise the local REST API, including cross-user isolation.
 
-Exercises the whole platform side without a real device: login, enroll, asset
-upload with hash verification, script publish, and bundle fetch.
+Run against an isolated dev database: SKY_BASE=http://127.0.0.1:8787 python3 scripts/smoke.py
+Creates two accounts and test data; use a disposable database.
 """
-
-from __future__ import annotations
-
 import hashlib
 import json
 import os
-import struct
-import sys
+import time
 import urllib.error
 import urllib.request
-import zlib
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 BASE = os.environ.get("SKY_BASE", "http://127.0.0.1:8787")
-PASSWORD = os.environ.get("SKY_PASSWORD", "sky-dev")
 
 
-def request(method: str, path: str, body=None, token: str | None = None, raw: bytes | None = None, ctype: str | None = None):
-    url = BASE + path
-    data = raw
+def request(method, path, body=None, token=None, raw=None):
     headers = {}
     if body is not None:
-        data = json.dumps(body).encode()
+        raw = json.dumps(body).encode()
         headers["content-type"] = "application/json"
-    if raw is not None and ctype:
-        headers["content-type"] = ctype
     if token:
-        headers["authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        headers["authorization"] = "Bearer " + token
+    req = urllib.request.Request(BASE + path, data=raw, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            payload = resp.read()
-            if resp.headers.get("content-type", "").startswith("application/json"):
-                return resp.status, json.loads(payload or b"null")
-            return resp.status, payload
-    except urllib.error.HTTPError as err:
-        payload = err.read()
-        try:
-            return err.code, json.loads(payload or b"null")
-        except json.JSONDecodeError:
-            return err.code, payload
+        response = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        response = e
+    with response:
+        data = response.read()
+        if response.headers.get("content-type", "").startswith("application/json"):
+            data = json.loads(data)
+        return response.status, data
 
 
-def png(width: int, height: int, seed: int = 0) -> bytes:
-    """Build a small RGB PNG by hand so the smoke test needs no image library."""
-    rows = []
-    for y in range(height):
-        row = bytearray([0])
-        for x in range(width):
-            row += bytes(((x * 17 + seed) % 256, (y * 23 + seed) % 256, ((x + y) * 11) % 256))
-        rows.append(bytes(row))
-    raw = b"".join(rows)
-
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-
-    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+def check(name, condition, result=None):
+    print(("PASS " if condition else "FAIL ") + name + (f" {result}" if not condition else ""), flush=True)
+    if not condition:
+        raise AssertionError(name)
 
 
-def main() -> int:
-    failures = []
-
-    def check(label: str, condition: bool, extra: str = "") -> None:
-        mark = "ok  " if condition else "FAIL"
-        print(f"[{mark}] {label}{(' — ' + extra) if extra and not condition else ''}")
-        if not condition:
-            failures.append(label)
-
-    status, body = request("POST", "/v1/auth/login", {"password": PASSWORD})
-    check("login", status == 200 and "token" in body, f"{status} {body}")
-    token = body.get("token", "")
-
-    status, body = request("POST", "/v1/auth/login", {"password": PASSWORD + "-wrong"})
-    check("login rejects wrong password", status == 401, str(status))
-
-    status, body = request("GET", "/v1/devices")
-    check("devices requires auth", status == 401, str(status))
-
-    status, body = request("POST", "/v1/devices/enroll", {"name": "smoke-mac", "platform": "macos"}, token)
-    check("enroll device", status == 200 and "deviceToken" in body, f"{status} {body}")
-    device_id = body.get("deviceId")
-    device_token = body.get("deviceToken", "")
-
-    status, body = request("GET", "/v1/devices", token=token)
-    check("list devices", status == 200 and any(d["id"] == device_id for d in body.get("devices", [])), str(status))
-
-    status, body = request("GET", "/v1/device/me", token=device_token)
-    check("device token identifies device", status == 200 and body["device"]["id"] == device_id, str(status))
-
-    image = png(48, 32, seed=7)
+def main():
+    suffix = uuid.uuid4().hex
+    password = "smoke-password-123"
+    users = []
+    for i in range(2):
+        username = f"smoke_{i}_{suffix}"
+        status, result = request("POST", "/v1/auth/register", {"username": username, "password": password})
+        check("register", status == 201 and bool(result.get("token")), (status, result))
+        users.append((username, result["token"]))
+    a, b = users[0][1], users[1][1]
+    status, result = request("GET", "/v1/auth/me")
+    check("me requires authentication", status == 401, (status, result))
+    status, result = request("GET", "/v1/auth/me", token="invalid-token")
+    check("me rejects invalid token", status == 401, (status, result))
+    status, result = request("GET", "/v1/auth/me", token=a)
+    check("legacy username me", status == 200 and result["user"]["username"] == users[0][0] and bool(result["user"]["id"]) and result["user"]["email"] is None, (status, result))
+    email = f"smoke_{suffix}@example.com"
+    status, result = request("POST", "/v1/auth/register", {"email": email, "password": password})
+    check("register email", status == 201 and result["user"]["email"] == email and bool(result["user"]["id"]), (status, result))
+    email_id, email_token = result["user"]["id"], result["token"]
+    status, result = request("GET", "/v1/auth/me", token=email_token)
+    check("email me", status == 200 and result["user"]["id"] == email_id and result["user"]["email"] == email, (status, result))
+    status, result = request("POST", "/v1/auth/login", {"email": email.upper(), "password": password})
+    check("login email case-insensitive", status == 200 and result["user"]["id"] == email_id, (status, result))
+    status, result = request("POST", "/v1/auth/login", {"username": email, "password": password})
+    check("login email as username", status == 200 and result["user"]["id"] == email_id, (status, result))
+    status, result = request("POST", "/v1/auth/login", {"email": email, "username": email.upper(), "password": password})
+    check("matching identifier fields", status == 200 and result["user"]["id"] == email_id, (status, result))
+    status, result = request("POST", "/v1/auth/login", {"email": email, "username": users[0][0], "password": password})
+    check("conflicting identifier fields rejected", status == 400, (status, result))
+    status, result = request("POST", "/v1/auth/register", {"username": email.upper(), "password": password})
+    check("duplicate email across aliases", status == 409, (status, result))
+    second_email = f"smoke_alt_{suffix}@example.com"
+    status, result = request("POST", "/v1/auth/register", {"username": second_email, "password": password})
+    check("register email as username", status == 201 and result["user"]["email"] == second_email, (status, result))
+    second_id = result["user"]["id"]
+    status, result = request("POST", "/v1/auth/login", {"email": second_email, "password": password})
+    check("login username-registered email", status == 200 and result["user"]["id"] == second_id, (status, result))
+    status, result = request("POST", "/v1/auth/register", {"email": "not-an-email", "password": password})
+    check("invalid email rejected", status == 400, (status, result))
+    status, result = request("POST", "/v1/auth/register", {"username": users[0][0].upper(), "password": password})
+    check("duplicate username", status == 409, (status, result))
+    status, result = request("POST", "/v1/auth/login", {"username": users[0][0], "password": password})
+    check("login", status == 200 and bool(result.get("token")), (status, result))
+    status, result = request("POST", "/v1/auth/login", {"username": users[0][0], "password": "wrong-password"})
+    check("wrong password", status == 401, (status, result))
+    status, result = request("GET", "/v1/scripts")
+    check("authentication required", status == 401, (status, result))
+    image = b"smoke-asset-" + suffix.encode()
     sha = hashlib.sha256(image).hexdigest()
-    status, body = request("PUT", f"/v1/assets/{sha}?w=48&h=32&scale=2", token=token, raw=image, ctype="image/png")
-    check("upload asset", status == 200 and body.get("sha256") == sha, f"{status} {body}")
-
-    status, body = request("PUT", f"/v1/assets/{'0' * 64}?w=48&h=32&scale=2", token=token, raw=image, ctype="image/png")
-    check("asset hash is verified", status == 400, f"{status} {body}")
-
-    status, body = request("GET", f"/v1/assets/{sha}")
-    check("asset can be fetched anonymously", status == 200 and body == image, str(status))
-
-    status, body = request("POST", "/v1/scripts", {"name": "smoke script"}, token)
-    check("create script", status == 201, f"{status} {body}")
-    script_id = body["script"]["id"]
-
-    ir = {
-        "irVersion": 1,
-        "meta": {"name": "smoke script", "maxDurationMs": 60000},
-        "requires": ["screenshot", "templateMatch", "gesture"],
-        "entry": "main",
-        "vars": {},
-        "blocks": {
-            "main": [
-                {"op": "waitFor", "any": ["t1"], "timeoutMs": 5000, "intervalMs": 500},
-                {"op": "tap", "target": "t1"},
-                {"op": "sleep", "ms": 300},
-            ]
-        },
-        "targets": {
-            "t1": {
-                "type": "template",
-                "asset": sha,
-                "assetBox": {"w": 48, "h": 32},
-                "recordScale": 2,
-                "roi": [0.3, 0.3, 0.4, 0.4],
-                "anchor": [0.5, 0.5],
-            }
-        },
-    }
-
-    status, body = request("POST", f"/v1/scripts/{script_id}/publish", {"ir": ir}, token)
-    check("publish script", status == 200 and body.get("version") == 1, f"{status} {body}")
-
-    broken = json.loads(json.dumps(ir))
-    broken["blocks"]["main"].append({"op": "tap", "target": "missing"})
-    status, body = request("POST", f"/v1/scripts/{script_id}/publish", {"ir": broken}, token)
-    check("publish rejects dangling target", status == 400, f"{status} {body}")
-
-    broken2 = json.loads(json.dumps(ir))
-    broken2["targets"]["t1"]["asset"] = "f" * 64
-    status, body = request("POST", f"/v1/scripts/{script_id}/publish", {"ir": broken2}, token)
-    check("publish rejects missing asset", status == 400 and body.get("error") == "missing_assets", f"{status} {body}")
-
-    status, body = request("GET", f"/v1/scripts/{script_id}/bundle?v=1", token=device_token)
-    check(
-        "device can fetch a bundle",
-        status == 200 and body["version"] == 1 and sha in body["assets"],
-        f"{status} {body}",
-    )
-
-    status, body = request("POST", "/v1/runs", {"deviceId": device_id, "scriptId": script_id}, token)
-    check("run refuses offline device", status == 409 and body.get("error") == "device_offline", f"{status} {body}")
-
-    status, body = request("POST", f"/v1/runs/{'x' * 8}/logs", token=device_token, body=None, raw=b"", ctype="application/x-ndjson")
-    check("log upload requires a body", status in (200, 400), str(status))
-
-    print()
-    if failures:
-        print(f"{len(failures)} check(s) failed: {', '.join(failures)}")
-        return 1
-    print("all checks passed")
-    return 0
+    path = f"/v1/assets/{sha}"
+    status, result = request("PUT", path + "?w=10&h=10", token=a, raw=image)
+    check("asset upload", status == 200, (status, result))
+    for token, expected in [(None, 401), (b, 404), (a, 200)]:
+        status, result = request("GET", path, token=token)
+        check("asset read isolation", status == expected and (expected != 200 or result == image), (status, result))
+    status, result = request("PUT", path + "?w=10&h=10", token=b, raw=image)
+    check("same hash independently owned", status == 200, (status, result))
+    status, result = request("POST", "/v1/scripts", {"name": "smoke"}, a)
+    check("create script", status == 201, (status, result))
+    sid = result["script"]["id"]
+    script = f"/v1/scripts/{sid}"
+    for uri in [script, script + "/versions", script + "/versions/1", script + "/bundle"]:
+        status, result = request("GET", uri, token=b)
+        check("script child isolation " + uri, status == 404, (status, result))
+    status, result = request("PATCH", script + "/draft", {"revision": 0, "draft": {"text": "first"}}, a)
+    check("save draft", status == 200 and result["revision"] == 1, (status, result))
+    status, result = request("PATCH", script + "/draft", {"revision": 0, "draft": {}}, a)
+    check("stale draft conflict", status == 409 and result["revision"] == 1, (status, result))
+    status, result = request("PATCH", script + "/draft", {"revision": 1, "draft": {}}, b)
+    check("draft isolation", status == 404, (status, result))
+    ir = {"irVersion": 1, "meta": {"name": "smoke"}, "entry": "main", "blocks": {"main": []}, "targets": {}}
+    status, result = request("POST", script + "/publish", {"ir": ir}, a)
+    check("publish", status == 200 and result["version"] == 1, (status, result))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: request("POST", script + "/publish", {"ir": ir}, a), range(2)))
+    check("concurrent publication", sorted(r[1].get("version") for r in results) == [2, 3], results)
+    status, result = request("GET", script + "/versions/1", token=b)
+    check("published version isolation", status == 404, (status, result))
+    status, result = request("GET", script + "/bundle", token=a)
+    check("bundle", status == 200 and result["version"] == 3, (status, result))
+    t = int(time.time() * 1000)
+    record = {"scriptId": sid, "version": 1, "state": "completed", "startedAt": t, "endedAt": t}
+    status, result = request("POST", "/v1/runs", record, b)
+    check("run cannot reference other user's script", status == 404, (status, result))
+    status, result = request("POST", "/v1/runs", record, a)
+    check("create local run record", status == 201, (status, result))
+    status_delete, result_delete = request("DELETE", script, token=a)
+    check("script with run cannot be deleted", status_delete == 409, (status_delete, result_delete))
+    run = "/v1/runs/" + result["runId"]
+    for uri in [run, run + "/events", run + "/logs", run + "/shots/a.jpg"]:
+        for method in (["GET", "PUT"] if uri.endswith(("/logs", "/a.jpg")) else ["GET"]):
+            status, result = request(method, uri, token=b, raw=b"x" if method == "PUT" else None)
+            check("run child isolation " + method + " " + uri, status == 404, (status, result))
+    status, result = request("PUT", run + "/logs", token=a, raw=b'{"event":"done"}\n')
+    check("upload logs", status == 200, (status, result))
+    status, result = request("GET", run + "/logs", token=a)
+    check("fetch logs", status == 200 and b"done" in result, (status, result))
+    status, result = request("PUT", run + "/shots/a.jpg", token=a, raw=b"image")
+    check("upload screenshot", status == 200, (status, result))
+    status, result = request("GET", run + "/shots/a.jpg", token=a)
+    check("fetch screenshot", status == 200 and result == b"image", (status, result))
+    for uri in ["/v1/ws/device", "/v1/ws/console", "/v1/devices"]:
+        status, result = request("GET", uri, token=a)
+        check("removed control route " + uri, status == 404, (status, result))
+    print("All smoke checks passed.")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

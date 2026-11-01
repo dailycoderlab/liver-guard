@@ -14,6 +14,10 @@ from .geometry import Bounds, Rect
 from .protocol import Caps
 
 
+class CaptureSurfaceChanged(RuntimeError):
+    """The target changed while a frame was being captured; retry the frame."""
+
+
 @runtime_checkable
 class Driver(Protocol):
     def bounds(self) -> Bounds:

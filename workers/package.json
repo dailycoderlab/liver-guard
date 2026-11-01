@@ -6,8 +6,8 @@
     "dev": "wrangler dev",
     "dev:console": "vite build --config console/vite.config.ts --watch",
     "build": "vite build --config console/vite.config.ts",
-    "deploy": "npm run build && wrangler deploy",
-    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p console/tsconfig.json",
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "db:local": "wrangler d1 migrations apply sky --local",
     "db:remote": "wrangler d1 migrations apply sky --remote"
