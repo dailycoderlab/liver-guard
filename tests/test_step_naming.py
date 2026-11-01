@@ -27,6 +27,9 @@ def window(tmp_path, monkeypatch, app):
     built.show()
     app.processEvents()
     yield built
+    # 关闭前清掉未保存标记，否则 close() 会弹出确认框卡住测试。
+    # Clear the dirty flag so close() does not prompt.
+    built.pending_save = False
     built._quitting = True
     built.close()
     app.processEvents()
@@ -66,7 +69,12 @@ def test_rename_step_persists_and_shows_in_the_list(window, monkeypatch):
     window.rename_step(0)
     assert window.ir['blocks']['main'][0]['name'] == '点击购买按钮'
     assert window.steps.item(0).text().split('\n')[0] == '1. 点击购买按钮'
-    # The saved content carries the name too, so it survives a restart.
+    # 手动保存模式下改名先留在内存，保存后才落盘。
+    # Manual save: the rename lives in memory until saved.
+    assert window.pending_save is True
+    on_disk = window.store.get_script(window.script['id'])['ir']['blocks']['main']
+    assert on_disk == [] or 'name' not in on_disk[0]
+    assert window.save_script()
     assert window.store.get_script(window.script['id'])['ir']['blocks']['main'][0]['name'] == '点击购买按钮'
 
 
@@ -143,9 +151,9 @@ def test_step_menu_offers_rename_and_view(window):
     assert '重命名步骤…' in labels
     assert '查看点击区域' in labels
     assert '删除步骤' in labels
-    # Empty area offers insert only.
+    # Empty area offers insert plus save.
     empty = [action.text() for action in window.build_step_menu(-1).actions() if action.text()]
-    assert empty == ['插入等待…']
+    assert empty == ['插入等待…', '保存脚本']
 
 
 def test_recording_names_the_new_step(window, monkeypatch):
@@ -174,6 +182,9 @@ def test_recording_names_the_new_step(window, monkeypatch):
     window.driver = Driver()
     window.last_frame = frame
     monkeypatch.setattr(window, 'task', lambda fn, done=None, failed=None: done(fn()) if done else fn())
+    # 录制需要显式进入编辑模式，这是防误操作的关键。
+    # Recording requires entering edit mode explicitly.
+    window.edit_button.setChecked(True)
     window.record_click(.5, .5)
     step = window.ir['blocks']['main'][0]
     assert step['op'] == 'tap'

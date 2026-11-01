@@ -17,12 +17,25 @@ class LiveView(QWidget):
     def __init__(self):
         super().__init__()
         self.image = None
+        # 非编辑状态下画面仍然显示，但点上去不会有任何效果，因此光标要保持
+        # 普通箭头，避免让人以为可以点。
+        # Outside edit mode the frame is still shown but clicks do nothing, so the
+        # cursor stays a plain arrow instead of inviting a click.
+        self.editable = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         # 预览会被调成目标窗口的比例，最小尺寸必须足够小：极宽的横幅窗口只需要
         # 一百多像素高，极窄的竖窗口只需要一百多像素宽，卡大了就会被迫留黑边。
         # The pane is resized to the target's aspect ratio, so the minimum size has
         # to stay small: a wide banner needs ~130 px of height and a narrow
         # portrait ~160 px of width, and a larger floor forces letterboxing.
         self.setMinimumSize(120, 90)
+
+    def set_editable(self, editable: bool) -> None:
+        if self.editable == bool(editable):
+            return
+        self.editable = bool(editable)
+        self.setCursor(Qt.CursorShape.CrossCursor if self.editable else Qt.CursorShape.ArrowCursor)
+        self.update()
 
     def set_frame(self, frame):
         self.image = to_qimage(frame.image)

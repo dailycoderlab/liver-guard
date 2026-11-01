@@ -21,6 +21,7 @@ def window(tmp_path, monkeypatch, app):
     built = gui.MainWindow()
     built.preview_timer.stop()
     yield built
+    built.pending_save = False
     built._quitting = True
     built.close()
     app.processEvents()

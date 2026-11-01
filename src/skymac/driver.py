@@ -179,13 +179,3 @@ class MacDriver:
 
     def ax_at(self, x: float, y: float) -> Rect | None:
         return ax_lookup.element_at(x, y)
-
-    # ----------------------------------------------------------- diagnostics
-
-    def describe(self) -> dict:
-        surface = self.surface()
-        return {
-            "surface": surface.label,
-            "rect": surface.rect.as_tuple(),
-            "scale": self.measure_scale(surface.rect, force=True, surface=surface),
-        }

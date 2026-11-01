@@ -138,6 +138,43 @@ def test_invalid_sources_fail_cleanly(tmp_path, capsys):
         cli.build_parser().parse_args(["run", "--script", "s1", "--version", "1"])
 
 
+def test_probe_fails_when_a_match_is_below_threshold(tmp_path, capsys, monkeypatch):
+    """probe 必须和运行时判定一致：低于 threshold 就是跑不通。"""
+    sha = "a" * 64
+    (tmp_path / "assets").mkdir(exist_ok=True)
+    import cv2
+    import numpy as np
+    patch = np.zeros((20, 20, 3), dtype=np.uint8)
+    patch[:, :] = (10, 120, 200)
+    ok, buffer = cv2.imencode(".png", patch)
+    assert ok
+    (tmp_path / "assets" / f"{sha}.png").write_bytes(buffer.tobytes())
+
+    path = tmp_path / "ir.json"
+    write_json(path, ir(targets={"button": {
+        "type": "template", "asset": sha, "assetBox": {"w": 20, "h": 20},
+        "roi": [0, 0, 1, 1], "threshold": 0.82, "warnThreshold": 0.7,
+    }}))
+
+    from skycore.geometry import Rect
+    from skycore.matcher.engine import Hit
+
+    class LowScoreEngine:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def resolve(self, target, name, frame):
+            return Hit(box=Rect(10, 10, 20, 20), point=(20.0, 20.0),
+                       score=0.55, strategy="tpl", elapsed_ms=1.0)
+
+    monkeypatch.setattr(cli, "MatcherEngine", LowScoreEngine)
+    assert cli.main(["probe", "--file", str(path), "--assets", str(tmp_path / "assets")]) == 5
+    out = capsys.readouterr().out
+    assert "below threshold" in out
+    # 说明这一行不会被点击，避免误读成"找到了只是分数低"。
+    assert "will not click" in out
+
+
 def test_run_missing_asset_never_starts_driver(tmp_path, capsys):
     path = tmp_path / "ir.json"
     write_json(path, ir(targets={"button": {

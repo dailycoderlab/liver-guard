@@ -79,15 +79,12 @@ def restart_application() -> None:
 
 
 class PermissionGate(QDialog):
-    def __init__(self, parent=None, state_provider=None, requester=None, opener=None, allow_close=False):
+    def __init__(self, parent=None, state_provider=None, requester=None, opener=None):
         super().__init__(parent)
         self.state_provider = state_provider or current_state
         self.requester = requester or request
         self.opener = opener or open_settings
         self.responsible_provider = responsible_application
-        # 启动阶段退出即退出应用；从工具栏打开时只是关掉这个窗口。
-        # At startup the last button quits the app; opened from the toolbar it only closes.
-        self.allow_close = allow_close
         self.setWindowTitle('Sky 需要系统权限')
         self.setModal(True)
         self.setMinimumSize(600, 420)
@@ -122,7 +119,7 @@ class PermissionGate(QDialog):
         self.recheck_button.clicked.connect(self.recheck)
         row.addWidget(self.recheck_button)
         row.addStretch(1)
-        quit_button = QPushButton('关闭' if self.allow_close else '退出 Sky')
+        quit_button = QPushButton('退出 Sky')
         quit_button.clicked.connect(self.reject)
         row.addWidget(quit_button)
         layout.addLayout(row)
@@ -245,15 +242,4 @@ def ensure_permissions(parent=None) -> bool:
         return True
     prompt_restart(parent)
     return False
-
-
-def show_permission_gate(parent=None) -> bool:
-    """Re-open the gate from the running app, e.g. after a permission was revoked."""
-    gate = PermissionGate(parent, allow_close=True)
-    if gate.exec() != QDialog.DialogCode.Accepted:
-        return False
-    if gate.needs_restart():
-        prompt_restart(parent)
-        return False
-    return True
 

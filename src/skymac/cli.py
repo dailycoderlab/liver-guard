@@ -242,9 +242,18 @@ def cmd_probe(args) -> int:
             continue
 
         box = f"{hit.box.w:.0f}x{hit.box.h:.0f}"
-        flag = "" if hit.score >= target.threshold else "  <-- below threshold"
-        if hit.score < target.warnThreshold:
+        # 低于 threshold 在运行时等同于没找到，probe 也必须判失败，
+        # 否则会在真正跑之前给出"全部找到"的假安心。
+        # Below threshold means "not found" at run time, so probe must fail too;
+        # otherwise it reports success for a script that cannot click.
+        if hit.score < target.threshold:
             failures += 1
+            flag = "  <-- below threshold (will not click)"
+        else:
+            flag = ""
+            if hit.score < target.warnThreshold:
+                failures += 1
+                flag = "  <-- below warn threshold"
         print(
             f"{name:<20}{hit.score:8.3f}{hit.elapsed_ms:8.0f}  {hit.strategy:<16}{box:<18}"
             + (",".join(hit.warnings) if hit.warnings else "")
@@ -253,7 +262,7 @@ def cmd_probe(args) -> int:
 
     print()
     if failures:
-        print(f"{failures} target(s) missed or below the warn threshold")
+        print(f"{failures} target(s) missed or below threshold")
         return 5
     print("all targets located")
     return 0

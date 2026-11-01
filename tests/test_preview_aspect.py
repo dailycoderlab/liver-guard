@@ -27,6 +27,7 @@ def window(tmp_path, monkeypatch, app):
     for _ in range(3):
         app.processEvents()
     yield built
+    built.pending_save = False
     built._quitting = True
     built.close()
     app.processEvents()

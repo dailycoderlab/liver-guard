@@ -92,6 +92,9 @@ class MainWindow(QMainWindow):
         self.preview_busy = False
         self.operation_busy = False
         self.pending_save = False
+        # 默认只读：打开脚本不会进入编辑模式，必须点「开始编辑」。
+        # Read-only by default; opening a script does not enter edit mode.
+        self.editing = False
         self.last_frame = None
         self._quitting = False
         self._build_ui()
@@ -114,12 +117,25 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
         toolbar = QHBoxLayout()
-        for text, handler in [('选择窗口', self.select_window),
-                              ('权限与环境', self.diagnose), ('系统权限', self.show_permissions),
-                              ('运行历史', self.history), ('开机自启', self.configure_autostart)]:
+        for text, handler in [('选择窗口', self.select_window), ('运行历史', self.history)]:
             button = QPushButton(text)
             button.clicked.connect(handler)
             toolbar.addWidget(button)
+        # 运行/停止作用于整个脚本，不属于某一条步骤，所以放顶部工具栏。
+        # Run/stop act on the whole script, so they belong in the toolbar.
+        toolbar.addSpacing(16)
+        self.save_button = QPushButton('保存')
+        self.save_button.setEnabled(False)
+        self.save_button.setToolTip('把当前脚本写入本地文件（有未保存改动时可用）')
+        self.save_button.clicked.connect(self.save_script)
+        toolbar.addWidget(self.save_button)
+        self.run_button = QPushButton('运行')
+        self.run_button.clicked.connect(self.start_run)
+        toolbar.addWidget(self.run_button)
+        self.stop_button = QPushButton('停止')
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_run)
+        toolbar.addWidget(self.stop_button)
         self.status = QLabel('请选择脚本和目标窗口')
         toolbar.addWidget(self.status, 1)
         outer.addLayout(toolbar)
@@ -141,29 +157,24 @@ class MainWindow(QMainWindow):
         splitter.addWidget(left)
         center = QWidget()
         center_layout = QVBoxLayout(center)
-        center_layout.addWidget(QLabel('脚本步骤'))
+        header = QHBoxLayout()
+        header.addWidget(QLabel('脚本步骤'))
+        header.addStretch(1)
+        # 编辑模式必须主动进入：点击实时画面只在编辑状态下才追加步骤，
+        # 避免只是浏览脚本时误点就改动了内容。
+        # Edit mode is explicit: clicking the preview only appends steps while
+        # editing, so merely browsing a script cannot change it.
+        self.edit_button = QPushButton('开始编辑')
+        self.edit_button.setCheckable(True)
+        self.edit_button.toggled.connect(self.set_editing)
+        header.addWidget(self.edit_button)
+        center_layout.addLayout(header)
         self.steps = StepList(self.store.root / 'assets')
         self.steps.itemDoubleClicked.connect(self.on_step_double_clicked)
         self.steps.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.steps.customContextMenuRequested.connect(self.show_step_menu)
         self.steps.setToolTip('双击重命名步骤；Ctrl 双击放大查看点击区域；右键更多操作')
         center_layout.addWidget(self.steps, 1)
-        row = QHBoxLayout()
-        for text, handler in [('上移', lambda: self.move_step(-1)), ('下移', lambda: self.move_step(1)),
-                              ('删除', self.delete_step), ('插入等待', self.insert_sleep)]:
-            button = QPushButton(text)
-            button.clicked.connect(handler)
-            row.addWidget(button)
-        center_layout.addLayout(row)
-        row = QHBoxLayout()
-        # 没有发布状态：保存即定稿，运行直接用当前内容。
-        # No published state: saving is final, and runs use the current content.
-        for text, handler in [('保存', self.save_script), ('运行', self.start_run),
-                              ('停止', self.stop_run), ('删除脚本', self.delete_current_script)]:
-            button = QPushButton(text)
-            button.clicked.connect(handler)
-            row.addWidget(button)
-        center_layout.addLayout(row)
         splitter.addWidget(center)
 
         right = QSplitter(Qt.Orientation.Vertical)
@@ -334,7 +345,7 @@ class MainWindow(QMainWindow):
             self.hide()
             event.ignore()
         else:
-            if not self.save_script():
+            if not self.confirm_discard():
                 event.ignore()
                 return
             self.stop_event.set()
@@ -343,7 +354,7 @@ class MainWindow(QMainWindow):
                 QApplication.quit()
 
     def quit_app(self):
-        if not self.save_script():
+        if not self.confirm_discard():
             return
         self.stop_event.set()
         self._quitting = True
@@ -357,11 +368,6 @@ class MainWindow(QMainWindow):
     def error(self, message):
         self.status.setText('操作失败')
         QMessageBox.warning(self, 'Sky', message)
-
-    def show_permissions(self):
-        """重新打开启动时的权限引导；已授权时会给出重启提示。"""
-        from .permissions_gate import show_permission_gate
-        show_permission_gate(self)
 
     def select_window(self):
         if self.operation_busy:
@@ -392,24 +398,6 @@ class MainWindow(QMainWindow):
             self.status.setText('已选择：' + selected.label)
         except Exception as e:
             self.error(str(e))
-
-    def diagnose(self):
-        if self.driver is None:
-            self.error('请先选择目标窗口'); return
-        driver = self.driver
-        def work():
-            with self.lock:
-                result = driver.describe()
-                if platform.system() == 'Darwin':
-                    from skymac.permissions import current_state
-                    state = current_state()
-                    result['permissions'] = str(state)
-                    result['permissionProblems'] = state.problems()
-                    frame = driver.capture()
-                    result['capture_ms'] = frame.capture_ms
-                    result['content_std'] = frame.content_std()
-                return result
-        self.task(work, lambda r: QMessageBox.information(self, '环境检查', json.dumps(r, ensure_ascii=False, indent=2, default=str)))
 
     def preview(self):
         if not self.driver or self.preview_busy or self.operation_busy or not self.isVisible():
@@ -443,7 +431,45 @@ class MainWindow(QMainWindow):
             self.error('预览已停止：' + message)
         self.task(work, done, fail)
 
+    def set_editing(self, enabled):
+        """进入/退出编辑模式。
+
+        编辑模式只影响"点击画面是否追加步骤"，不改变脚本已保存的内容；
+        退出时先保存，避免用户以为没生效的内容丢失。
+        Edit mode only controls whether clicking the preview appends a step; it
+        does not alter what is stored. Leaving it saves first.
+        """
+        if enabled and not self.ir:
+            # 没有打开的脚本时不允许进入编辑模式。这里用 blockSignals 回退
+            # 按钮状态：setChecked 再触发 toggled 会递归回到本方法。
+            # Refuse without an open script. Unchecking inside the handler would
+            # re-enter this method, so the signal is blocked while resetting.
+            self.edit_button.blockSignals(True)
+            self.edit_button.setChecked(False)
+            self.edit_button.blockSignals(False)
+            self.error('请先选择或新建一个脚本')
+            return
+        if enabled == self.editing:
+            return
+        self.editing = bool(enabled)
+        self.edit_button.setText('结束编辑' if self.editing else '开始编辑')
+        self.live.set_editable(self.editing)
+        self.preview_label.setText(
+            '实时画面：点击要录制的目标（编辑中）' if self.editing
+            else '实时画面：点击要录制的目标'
+        )
+        self.status.setText('编辑中' if self.editing else '已退出编辑')
+        # 退出编辑不自动写盘：改动还没保存时提醒用户按「保存」。
+        # Leaving edit mode does not write to disk; remind the user instead.
+        if not enabled and self.pending_save:
+            self.status.setText('已退出编辑 · 有未保存的改动，点「保存」写入')
+
     def record_click(self, nx, ny):
+        # 非编辑状态下的点击完全不处理：这是防误操作的关键。
+        # A click outside edit mode is ignored entirely; this is the guard
+        # against accidental edits.
+        if not self.editing:
+            return
         if not self.driver or not self.ir or not self.script or self.operation_busy or not self.last_frame:
             return
         driver = self.driver
@@ -569,7 +595,7 @@ class MainWindow(QMainWindow):
         self.build_script_menu(item).exec(self.scripts.viewport().mapToGlobal(position))
 
     def create_script(self):
-        if self.operation_busy or not self.save_script():
+        if self.operation_busy or not self.confirm_discard():
             return
         name, ok = QInputDialog.getText(self, '新建脚本', '脚本名称')
         if ok and name.strip():
@@ -580,19 +606,32 @@ class MainWindow(QMainWindow):
                 self.refresh_steps()
                 self.load_scripts()
                 self.status.setText('脚本：' + script['name'])
+                # 新建后直接进入编辑模式：这个脚本还是空的，用户就是要录。
+                # A brand-new script is empty, so enter edit mode right away.
+                self.edit_button.setChecked(True)
             except (OSError, ValueError) as error:
                 self.error('创建本地脚本失败：' + str(error))
 
     def open_script(self, item):
         if self.operation_busy:
             self.error('请等待当前操作结束'); return
-        if not self.save_script():
+        target_id = item.data(Qt.ItemDataRole.UserRole)
+        # 已在同一个脚本上时不必询问丢弃，避免无意义的确认框。
+        # Clicking the already-open script should not prompt to discard.
+        same = self.script is not None and self.script['id'] == target_id
+        if same:
             return
+        if not self.confirm_discard():
+            return
+        # 切换脚本时退出编辑模式：上一个脚本的编辑意图不应延续到另一个。
+        # Switching scripts leaves edit mode; intent does not carry over.
+        self.edit_button.setChecked(False)
         try:
-            script = self.store.get_script(item.data(Qt.ItemDataRole.UserRole))
+            script = self.store.get_script(target_id)
             self.script = script
             self.ir = copy.deepcopy(self.store.script_ir(script))
             self.pending_save = False
+            self.save_button.setEnabled(False)
             self.refresh_steps()
             self.status.setText('脚本：' + script['name'])
         except (OSError, ValueError, KeyError) as error:
@@ -601,7 +640,7 @@ class MainWindow(QMainWindow):
     def rename_script(self, item=None):
         """重命名右键选中的脚本；省略 item 时作用于当前打开的脚本。"""
         script_id = self.script_id_of(item) or (self.script['id'] if self.script else None)
-        if not script_id or self.operation_busy or not self.save_script():
+        if not script_id or self.operation_busy or not self.confirm_discard():
             return
         try:
             target = self.store.get_script(script_id)
@@ -641,6 +680,7 @@ class MainWindow(QMainWindow):
             if self.script and self.script['id'] == script_id:
                 self.script = self.ir = None
                 self.pending_save = False
+                self.save_button.setEnabled(False)
                 self.steps.clear()
             self.load_scripts()
             self.status.setText('已删除：' + target['name'])
@@ -708,6 +748,13 @@ class MainWindow(QMainWindow):
             insert = QAction('插入等待…', menu)
             insert.triggered.connect(self.insert_sleep)
             menu.addAction(insert)
+        menu.addSeparator()
+        # 保存按钮已移除，但保存动作本身仍然需要容易够到。
+        # The save button is gone, but saving still needs to be reachable.
+        save = QAction('保存脚本', menu)
+        save.triggered.connect(self.save_script)
+        save.setEnabled(bool(self.ir))
+        menu.addAction(save)
         return menu
 
     def edit_step_jitter(self, index):
@@ -820,25 +867,70 @@ class MainWindow(QMainWindow):
             return
         AssetViewer(pixmap, f'点击区域  {pixmap.width()} × {pixmap.height()} px', self).exec()
 
-    def changed(self):
-        self.refresh_steps()
+    def mark_dirty(self):
+        """标记有未保存的改动；只在内存里改，不写盘。"""
         self.pending_save = True
-        self.save_script()
+        self.save_button.setEnabled(True)
+        # 状态栏要能看出还没保存，否则用户以为已经写进文件了。
+        # The status bar must show the unsaved state, or the user assumes it is saved.
+        self.status.setText('有未保存的改动')
+
+    def changed(self):
+        """步骤被改动：刷新列表并标记为未保存。
+
+        手动保存模式下这里绝不写盘，用户按「保存」才落盘。这样误操作可以
+        靠不保存直接丢弃，而不是已经悄悄写进文件。
+        Editing only marks the script dirty; nothing reaches disk until the user
+        presses save, so a mistake can still be abandoned.
+        """
+        self.refresh_steps()
+        self.mark_dirty()
 
     def save_script(self):
         if not self.script or not self.ir:
             return True
-        # 手动点「保存」时即使没有改动也要落盘，让用户确认内容已写入。
-        # An explicit save writes even without changes, so the user gets a
-        # confirmation that the content reached disk.
         try:
             self.store.save_script(self.script['id'], self.ir)
         except (OSError, ValueError, KeyError) as error:
             self.error('保存本地脚本失败，修改仍保留在内存中：' + str(error))
             return False
         self.pending_save = False
+        self.save_button.setEnabled(False)
         self.status.setText('已保存')
         return True
+
+    def confirm_discard(self) -> bool:
+        """有未保存改动时询问是否保存；返回 False 表示应当取消当前动作。"""
+        if not self.pending_save:
+            return True
+        answer = QMessageBox.question(
+            self, '未保存的改动',
+            f'脚本“{self.script["name"] if self.script else ""}”有未保存的改动，是否保存？',
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel)
+        if answer == QMessageBox.StandardButton.Cancel:
+            return False
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save_script()
+        # 丢弃：从磁盘重新载入，内存里的改动一并丢掉。
+        self.reload_current_script()
+        return True
+
+    def reload_current_script(self):
+        """从磁盘重新读取当前脚本，丢弃内存中的改动。"""
+        if not self.script:
+            self.pending_save = False
+            return
+        try:
+            fresh = self.store.get_script(self.script['id'])
+        except (OSError, ValueError, KeyError) as error:
+            self.error('重新读取脚本失败：' + str(error))
+            return
+        self.script = fresh
+        self.ir = copy.deepcopy(self.store.script_ir(fresh))
+        self.pending_save = False
+        self.save_button.setEnabled(False)
+        self.refresh_steps()
 
     def move_step(self, delta, index=None):
         index = self.steps.currentRow() if index is None else index
@@ -879,14 +971,23 @@ class MainWindow(QMainWindow):
             self.ir['blocks']['main'].insert(self.steps.currentRow() + 1, step)
             self.changed()
 
+    def set_running(self, running):
+        """运行期间禁用「运行」、启用「停止」，避免重复启动。"""
+        self.running = bool(running)
+        self.run_button.setEnabled(not self.running)
+        self.stop_button.setEnabled(self.running)
+
     def start_run(self):
         if not self.driver or not self.script or self.operation_busy:
             self.error('请选择脚本与目标窗口，并等待其他操作结束'); return
-        if not self.save_script():
+        # 运行读的是磁盘内容，所以先落盘，否则会跑到旧版本。
+        # Runs read from disk, so save first or the old content would execute.
+        if self.pending_save and not self.save_script():
             return
         script_id, driver = self.script['id'], self.driver
         self.stop_event.clear()
         self.operation_busy = True
+        self.set_running(True)
         self.log.append('正在启动运行……')
         def work():
             started = int(time.time()*1000)
@@ -914,12 +1015,14 @@ class MainWindow(QMainWindow):
             return result, save_error
         def done(data):
             self.operation_busy = False
+            self.set_running(False)
             result, save_error = data
             self.log.append(f'运行结束：{result.state}，步骤数 {result.step_count}，{result.error_msg or "无错误"}')
             if save_error:
                 self.log.append('运行记录保存失败：' + save_error)
         def fail(message):
             self.operation_busy = False
+            self.set_running(False)
             self.error(message)
         self.task(work, done, fail)
 
@@ -959,6 +1062,13 @@ class MainWindow(QMainWindow):
                 f"等待 {data.get('delayMs', 0)}ms "
                 f"匹配 {data.get('score')}"
             )
+        elif event == 'match_rejected':
+            data = payload or {}
+            self.log.append(
+                f"! 步骤 {data.get('stepId', '')} 的 {data.get('target', '')} "
+                f"只匹配到 {data.get('score')}，低于阈值 {data.get('threshold')}，"
+                f"按未找到处理（位置 {data.get('x')}, {data.get('y')}）"
+            )
         elif event == 'offset_clamped':
             data = payload or {}
             self.log.append(
@@ -971,16 +1081,6 @@ class MainWindow(QMainWindow):
     def stop_run(self):
         self.stop_event.set()
         self.log.append('已请求停止运行')
-
-    def configure_autostart(self):
-        enabled = QMessageBox.question(self, '开机自启', '启用开机自启？选择“否”则关闭。') == QMessageBox.StandardButton.Yes
-        try:
-            from .autostart import set_enabled
-            set_enabled(enabled)
-            self.status.setText('开机自启已更新')
-        except (OSError, RuntimeError) as error:
-            self.error(str(error))
-
     def history(self):
         try:
             runs = self.store.list_runs()

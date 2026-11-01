@@ -43,6 +43,9 @@ def test_record_click_captures_before_input_and_saves_asset(tmp_path, monkeypatc
     window.ir = blank_ir('test')
     window.last_frame = frame
     monkeypatch.setattr(window, 'task', lambda fn, done=None, failed=None: done(fn()) if done else fn())
+    # 录制要求先进入编辑模式。
+    # Recording requires entering edit mode first.
+    window.edit_button.setChecked(True)
     window.record_click(.5, .5)
     assert events == ['capture', 'tap']
     assert window.ir['blocks']['main'][0]['op'] == 'tap'

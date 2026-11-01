@@ -93,6 +93,9 @@ class RunContext:
         self.step_count = 0
         self._stagnation = 0
         self._last_action_hash: str | None = None
+        # 最近一次定位失败的具体原因，由 find() 填写，供 run_step 报错使用。
+        # Why the last lookup failed; written by find() and read when raising.
+        self._reject: str | None = None
 
     # ------------------------------------------------------------- lifecycle
 
@@ -122,16 +125,49 @@ class RunContext:
 
     # -------------------------------------------------------------- matching
 
-    def find(self, name: str, step_id: str, warn: bool = True) -> Hit | None:
+    def find(self, name: str, step_id: str, warn: bool = True, enforce_threshold: bool = True) -> Hit | None:
+        """定位目标；匹配分数低于 ``threshold`` 时等同于没找到。
+
+        ``enforce_threshold`` 默认开启，因为点击和滑动一旦落到错误位置就
+        无法撤销。``waitGone`` 和条件判断传入 False：那里的问题是"目标还在
+        不在"，低分说明画面在变，判成"已消失"会得出错误结论。
+        A match below ``threshold`` counts as not found because an injected
+        click cannot be undone. ``waitGone`` and conditions pass False: for them
+        a low score means the screen is changing, not that the control is gone.
+        """
         target = self.ir.target(name)
         if target is None:
             raise RunError("unknown_target", f'target "{name}" is not defined', step_id)
 
         hit = self.engine.resolve(target, name, self.frame())
         if hit is None:
+            self._reject = f'target "{name}" not matched'
             return None
 
         self.reporter.score(step_id, name, hit.score, hit.strategy, hit.elapsed_ms, hit.reused)
+
+        if enforce_threshold and self._below_threshold(target, hit):
+            self._reject = (f'target "{name}" matched at {hit.score:.3f}, '
+                            f'below threshold {target.threshold:.2f}')
+            # 低分命中是有价值的信息：它说明模板在该位置附近能找到相近内容，
+            # 通常是模板裁得不准或界面变了，而不是完全没有目标。
+            # A rejected match is worth reporting: it usually means the crop is
+            # slightly off or the UI changed, not that nothing is there.
+            self.reporter.log(
+                "warn",
+                "match_rejected",
+                {
+                    "stepId": step_id,
+                    "target": name,
+                    "score": round(hit.score, 3),
+                    "threshold": round(target.threshold, 3),
+                    "x": round(hit.point[0], 1),
+                    "y": round(hit.point[1], 1),
+                },
+            )
+            return None
+
+        self._reject = None
 
         if warn and self._is_low_confidence(target, hit):
             self.reporter.log(
@@ -144,6 +180,17 @@ class RunContext:
             self.reporter.log("debug", "match_warnings", {"stepId": step_id, "target": name, "warnings": hit.warnings})
 
         return hit
+
+    def reject_message(self, name: str) -> str:
+        """最近一次定位失败的原因；比笼统的 "not found" 更能指向问题。"""
+        return self._reject or f'target "{name}" not found'
+
+    @staticmethod
+    def _below_threshold(target: TemplateTarget | PointTarget, hit: Hit) -> bool:
+        if isinstance(target, PointTarget):
+            # 点目标是纯坐标，没有图像匹配分数可供比较。
+            return False
+        return hit.score < target.threshold
 
     @staticmethod
     def _is_low_confidence(target: TemplateTarget | PointTarget, hit: Hit) -> bool:
@@ -256,14 +303,14 @@ class Interpreter:
         name = require_target(step, step_id)
         hit = self.ctx.find(name, step_id)
         if hit is None:
-            raise RunError("not_found", f'target "{name}" not found', step_id)
+            raise RunError("not_found", self.ctx.reject_message(name), step_id)
         self.jittered_click(step, step_id, name, hit, int(step.get("durationMs", 60)))
 
     def op_longPress(self, step: dict[str, Any], step_id: str) -> None:
         name = require_target(step, step_id)
         hit = self.ctx.find(name, step_id)
         if hit is None:
-            raise RunError("not_found", f'target "{name}" not found', step_id)
+            raise RunError("not_found", self.ctx.reject_message(name), step_id)
         self.jittered_click(step, step_id, name, hit, int(step.get("durationMs", 600)))
 
     def jittered_click(self, step: dict[str, Any], step_id: str, name: str, hit: Hit, duration_ms: int) -> None:
@@ -365,13 +412,13 @@ class Interpreter:
             raise RunError("bad_step", "swipe needs `from`", step_id)
         start = self.ctx.find(start_name, step_id)
         if start is None:
-            raise RunError("not_found", f'target "{start_name}" not found', step_id)
+            raise RunError("not_found", self.ctx.reject_message(start_name), step_id)
 
         end_name = step.get("to")
         if isinstance(end_name, str):
             end = self.ctx.find(end_name, step_id)
             if end is None:
-                raise RunError("not_found", f'target "{end_name}" not found', step_id)
+                raise RunError("not_found", self.ctx.reject_message(end_name), step_id)
             target = end.point
         else:
             vector = step.get("vector") or [0.0, -0.3]
@@ -420,7 +467,7 @@ class Interpreter:
         while True:
             self.ctx.check_stop()
             self.ctx.invalidate()
-            if self.ctx.find(name, step_id, warn=False) is None:
+            if self.ctx.find(name, step_id, warn=False, enforce_threshold=False) is None:
                 return
             if time.monotonic() >= deadline:
                 raise RunError("timeout", f'target "{name}" never disappeared', step_id)
@@ -522,11 +569,14 @@ class Interpreter:
             names = condition["visible"]
             names = [names] if isinstance(names, str) else [n for n in names if isinstance(n, str)]
             self.ctx.invalidate()
-            return any(self.ctx.find(name, step_id, warn=False) is not None for name in names)
+            # 条件判断看的是"在不在"，低分说明画面在变化，不能当作不存在。
+            # Conditions ask "is it there"; a low score means the screen is in
+            # motion, so it must not be treated as absent.
+            return any(self.ctx.find(name, step_id, warn=False, enforce_threshold=False) is not None for name in names)
 
         if "missing" in condition:
             self.ctx.invalidate()
-            return self.ctx.find(str(condition["missing"]), step_id, warn=False) is None
+            return self.ctx.find(str(condition["missing"]), step_id, warn=False, enforce_threshold=False) is None
 
         if "var" in condition:
             name = str(condition["var"])
