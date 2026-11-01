@@ -1,0 +1,7 @@
+# Windows desktop driver
+
+On Windows 10 or later, install the project dependencies including `mss`, NumPy and OpenCV, and put `src` on `PYTHONPATH`. Create `skywin.WindowsDriver(window_query="part of the title")` or `WindowsDriver(window_number=hwnd)` and pass it wherever a `skycore.driver.Driver` is expected. The first matching visible, non-minimized titled window is bound on first use; if it disappears or is replaced, operations raise `SurfaceUnavailable` rather than switching targets. To explicitly select the entire virtual desktop, use `WindowsDriver(full_screen=True)`.
+
+`bounds`, captures and input use physical pixels, with scale 1, across the virtual desktop, including negative monitor origins. The calling thread must support per-monitor DPI awareness v2. The window rectangle is clipped to the virtual desktop. Captures are screen crops, so overlapping windows, shadows, protected content and monitor gaps can affect the image. Window input requires the target to be foreground and checks the window under mouse points. Windows can deny foreground activation or block injection into higher-integrity applications (User Interface Privilege Isolation); secure desktops are not supported. `describe()` attempts a capture and reports errors and a flat-image hint, not definitive proof of permissions or content visibility. `ax_at()` is unsupported. Call `close()` on each thread that used capture to release that thread's mss session.
+
+This package only supplies a driver; window selection and Windows dependency packaging must be wired by the application.

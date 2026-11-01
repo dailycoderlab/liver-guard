@@ -6,10 +6,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-.dev.vars
-.wrangler/
 .DS_Store
-client/.venv/
 *.egg-info/
 .coverage
 htmlcov/

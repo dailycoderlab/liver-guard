@@ -1,0 +1,37 @@
+[project]
+name = "sky-client"
+version = "0.1.0"
+description = "Sky: local desktop script recorder and runner with screen capture, input injection, image matching and IR execution"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+  "mss>=9.0",
+  "pydantic>=2.6",
+  "pyobjc-framework-Quartz>=10.1; sys_platform == 'darwin'",
+  "pyobjc-framework-ApplicationServices>=10.1; sys_platform == 'darwin'",
+  "pyobjc-framework-Cocoa>=10.1; sys_platform == 'darwin'",
+  "PySide6-Essentials>=6.7",
+]
+
+[project.scripts]
+sky = "skymac.cli:main"
+sky-gui = "skygui.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skycore", "src/skymac", "src/skywin", "src/skygui"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.17.2",
+    "pyinstaller>=6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
