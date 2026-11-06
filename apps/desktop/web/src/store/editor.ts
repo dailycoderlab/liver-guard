@@ -15,7 +15,7 @@ import {
   toFlowState,
   uniqueName,
   type FlowState,
-  type SkyNode,
+  type LiverGuardNode,
 } from '@/ir/graph';
 import { emptyDoc, MAIN_FLOW, type IrDoc, type IrMeta, type NodeType, type Problem, type Target, type VarValue } from '@/ir/model';
 
@@ -77,7 +77,7 @@ export interface EditorState extends DocSlice {
   markSaved: () => void;
 
   // canvas
-  onNodesChange: (changes: NodeChange<SkyNode>[]) => void;
+  onNodesChange: (changes: NodeChange<LiverGuardNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
   beginDrag: () => void;

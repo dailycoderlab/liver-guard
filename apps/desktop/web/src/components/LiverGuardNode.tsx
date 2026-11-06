@@ -1,12 +1,12 @@
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { memo, useEffect } from 'react';
 import { NODE_SPECS, outputHandles, summarize, targetRefs } from '@/ir/catalog';
-import type { SkyNode as SkyNodeType } from '@/ir/graph';
+import type { LiverGuardNode as LiverGuardNodeType } from '@/ir/graph';
 import { cn } from '@/lib/cn';
 import { runtimeKey, useEditor } from '@/store/editor';
 import { TargetThumb } from './TargetThumb';
 
-function SkyNodeView({ id, data, selected }: NodeProps<SkyNodeType>) {
+function LiverGuardNodeView({ id, data, selected }: NodeProps<LiverGuardNodeType>) {
   const spec = NODE_SPECS[data.kind];
   const runtime = useEditor((s) => s.runtime[runtimeKey(s.activeFlow, id)]);
   const updateInternals = useUpdateNodeInternals();
@@ -24,12 +24,12 @@ function SkyNodeView({ id, data, selected }: NodeProps<SkyNodeType>) {
       className={cn(
         'w-[220px] rounded-lg border bg-panel text-ink shadow-lg transition-shadow',
         selected ? 'border-accent ring-1 ring-accent' : 'border-line',
-        state === 'running' && 'sky-running border-accent',
+        state === 'running' && 'liverguard-running border-accent',
         state === 'ok' && 'border-emerald-500',
         state === 'failed' && 'border-red-500',
       )}
     >
-      {data.kind !== 'start' && <Handle type="target" position={Position.Left} className="sky-handle-in" />}
+      {data.kind !== 'start' && <Handle type="target" position={Position.Left} className="liverguard-handle-in" />}
       <div className={cn('flex items-center gap-1.5 rounded-t-[7px] px-2.5 py-1.5 text-white', spec.accent)}>
         <Icon size={14} />
         <span className="truncate font-medium">{data.label || spec.label}</span>
@@ -47,11 +47,11 @@ function SkyNodeView({ id, data, selected }: NodeProps<SkyNodeType>) {
       {handles.map((h) => (
         <div key={h.id} className="relative flex h-6 items-center justify-end border-t border-line/60 pr-4 pl-2.5 text-[11px]">
           <span className={h.tone === 'fail' ? 'text-red-300' : 'text-emerald-300'}>{h.label}</span>
-          <Handle type="source" position={Position.Right} id={h.id} className={h.tone === 'fail' ? 'sky-handle-fail' : 'sky-handle-ok'} />
+          <Handle type="source" position={Position.Right} id={h.id} className={h.tone === 'fail' ? 'liverguard-handle-fail' : 'liverguard-handle-ok'} />
         </div>
       ))}
     </div>
   );
 }
 
-export const SkyNodeComponent = memo(SkyNodeView);
+export const LiverGuardNodeComponent = memo(LiverGuardNodeView);

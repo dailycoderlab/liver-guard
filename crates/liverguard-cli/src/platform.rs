@@ -1,7 +1,7 @@
 //! The only place the CLI knows which OS it runs on.
 
 use anyhow::Result;
-use sky_engine::Driver;
+use liverguard_engine::Driver;
 
 pub struct WindowRow {
     pub label: String,
@@ -10,7 +10,7 @@ pub struct WindowRow {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
-    use sky_driver_mac::{permissions, window, MacDriver, SurfaceSelector};
+    use liverguard_driver_mac::{permissions, window, MacDriver, SurfaceSelector};
 
     fn selector(window: Option<&str>) -> SurfaceSelector {
         match window {
@@ -46,7 +46,7 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use sky_driver_win::{capture, window, SurfaceSelector, WinDriver};
+    use liverguard_driver_win::{capture, window, SurfaceSelector, WinDriver};
 
     fn selector(window: Option<&str>) -> SurfaceSelector {
         match window {
@@ -59,19 +59,19 @@ mod imp {
     }
 
     pub fn make_driver(window: Option<&str>) -> Result<Box<dyn Driver>> {
-        sky_driver_win::init_dpi_awareness();
+        liverguard_driver_win::init_dpi_awareness();
         Ok(Box::new(WinDriver::new(selector(window))))
     }
 
     pub fn list_windows(_all: bool) -> Vec<WindowRow> {
-        sky_driver_win::init_dpi_awareness();
+        liverguard_driver_win::init_dpi_awareness();
         window::list_windows().into_iter().map(|w| WindowRow { label: w.to_string() }).collect()
     }
 
     pub fn doctor_report() -> bool {
         let supported = capture::is_supported();
         println!("Windows Graphics Capture: {}", if supported { "可用" } else { "不可用（需要 Windows 10 1803 或更高版本）" });
-        println!("提示：若目标程序以管理员身份运行，需要同样以管理员身份运行 Sky，否则输入会被系统拒绝。");
+        println!("提示：若目标程序以管理员身份运行，需要同样以管理员身份运行 LiverGuard，否则输入会被系统拒绝。");
         supported
     }
 }

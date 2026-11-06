@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/sky-ir",
-  "crates/sky-vision",
-  "crates/sky-engine",
-  "crates/sky-store",
-  "crates/sky-driver-mac",
-  "crates/sky-driver-win",
-  "crates/sky-cli",
+  "crates/liverguard-ir",
+  "crates/liverguard-vision",
+  "crates/liverguard-engine",
+  "crates/liverguard-store",
+  "crates/liverguard-driver-mac",
+  "crates/liverguard-driver-win",
+  "crates/liverguard-cli",
   "apps/desktop/src-tauri",
 ]
 
@@ -30,12 +30,12 @@ hex = "0.4"
 uuid = { version = "1", features = ["v4"] }
 opencv = { version = "0.101", default-features = false, features = ["imgproc", "imgcodecs", "features2d", "calib3d", "flann"] }
 
-sky-ir = { path = "crates/sky-ir" }
-sky-vision = { path = "crates/sky-vision" }
-sky-engine = { path = "crates/sky-engine" }
-sky-store = { path = "crates/sky-store" }
-sky-driver-mac = { path = "crates/sky-driver-mac", default-features = true }
-sky-driver-win = { path = "crates/sky-driver-win", default-features = true }
+liverguard-ir = { path = "crates/liverguard-ir" }
+liverguard-vision = { path = "crates/liverguard-vision" }
+liverguard-engine = { path = "crates/liverguard-engine" }
+liverguard-store = { path = "crates/liverguard-store" }
+liverguard-driver-mac = { path = "crates/liverguard-driver-mac", default-features = true }
+liverguard-driver-win = { path = "crates/liverguard-driver-win", default-features = true }
 
 [profile.release]
 lto = "thin"

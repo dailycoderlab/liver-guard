@@ -1896,6 +1896,122 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
+name = "liverguard-cli"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "liverguard-driver-mac",
+ "liverguard-driver-win",
+ "liverguard-engine",
+ "liverguard-ir",
+ "liverguard-store",
+ "liverguard-vision",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "liverguard-desktop"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "liverguard-driver-mac",
+ "liverguard-driver-win",
+ "liverguard-engine",
+ "liverguard-ir",
+ "liverguard-store",
+ "liverguard-vision",
+ "opencv",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "uuid",
+]
+
+[[package]]
+name = "liverguard-driver-mac"
+version = "0.2.0"
+dependencies = [
+ "core-foundation",
+ "core-graphics",
+ "liverguard-engine",
+ "liverguard-ir",
+ "liverguard-vision",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "opencv",
+ "screencapturekit",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "liverguard-driver-win"
+version = "0.2.0"
+dependencies = [
+ "liverguard-engine",
+ "liverguard-ir",
+ "liverguard-vision",
+ "opencv",
+ "thiserror 2.0.21",
+ "windows",
+]
+
+[[package]]
+name = "liverguard-engine"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "liverguard-ir",
+ "liverguard-vision",
+ "opencv",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "liverguard-ir"
+version = "0.2.0"
+dependencies = [
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "liverguard-store"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "liverguard-ir",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "liverguard-vision"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "liverguard-ir",
+ "opencv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3098,122 +3214,6 @@ name = "siphasher"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
-
-[[package]]
-name = "sky-cli"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "clap",
- "ctrlc",
- "serde_json",
- "sky-driver-mac",
- "sky-driver-win",
- "sky-engine",
- "sky-ir",
- "sky-store",
- "sky-vision",
- "uuid",
-]
-
-[[package]]
-name = "sky-desktop"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "opencv",
- "serde",
- "serde_json",
- "sky-driver-mac",
- "sky-driver-win",
- "sky-engine",
- "sky-ir",
- "sky-store",
- "sky-vision",
- "tauri",
- "tauri-build",
- "uuid",
-]
-
-[[package]]
-name = "sky-driver-mac"
-version = "0.2.0"
-dependencies = [
- "core-foundation",
- "core-graphics",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "opencv",
- "screencapturekit",
- "sky-engine",
- "sky-ir",
- "sky-vision",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "sky-driver-win"
-version = "0.2.0"
-dependencies = [
- "opencv",
- "sky-engine",
- "sky-ir",
- "sky-vision",
- "thiserror 2.0.21",
- "windows",
-]
-
-[[package]]
-name = "sky-engine"
-version = "0.2.0"
-dependencies = [
- "chrono",
- "opencv",
- "rand",
- "regex",
- "serde",
- "serde_json",
- "sky-ir",
- "sky-vision",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "sky-ir"
-version = "0.2.0"
-dependencies = [
- "schemars 1.2.3",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sky-store"
-version = "0.2.0"
-dependencies = [
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "sky-ir",
- "tempfile",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "sky-vision"
-version = "0.2.0"
-dependencies = [
- "hex",
- "opencv",
- "serde",
- "serde_json",
- "sha2",
- "sky-ir",
- "thiserror 2.0.21",
-]
 
 [[package]]
 name = "slab"

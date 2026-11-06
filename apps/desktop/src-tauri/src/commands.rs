@@ -12,11 +12,11 @@ use std::time::Duration;
 use opencv::core::Mat;
 use opencv::prelude::*;
 use serde_json::{json, Value};
-use sky_engine::{Driver, DriverError, EventSink, ProbeRow};
-use sky_ir::{Bounds, IrDoc, Problem, Rect, Target};
-use sky_store::{LocalStore, ScriptRecord, ScriptSummary};
-use sky_vision::detect::{detect_candidates as detect, DetectOptions, PixelBox};
-use sky_vision::{author, AssetStore, Frame};
+use liverguard_engine::{Driver, DriverError, EventSink, ProbeRow};
+use liverguard_ir::{Bounds, IrDoc, Problem, Rect, Target};
+use liverguard_store::{LocalStore, ScriptRecord, ScriptSummary};
+use liverguard_vision::detect::{detect_candidates as detect, DetectOptions, PixelBox};
+use liverguard_vision::{author, AssetStore, Frame};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::State;
 
@@ -179,7 +179,7 @@ pub async fn live_start(state: State<'_, AppState>, surface: Surface, on_frame: 
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     let thread = std::thread::Builder::new()
-        .name("sky-live".into())
+        .name("liverguard-live".into())
         .spawn(move || live_loop(surface, flag, on_frame))
         .map_err(err)?;
     *state.live.lock().unwrap() = Some(LiveHandle { stop, thread });
@@ -295,7 +295,7 @@ pub async fn probe(state: State<'_, AppState>, ir: IrDoc, surface: Surface) -> C
     let store = state.store.clone();
     blocking(move || {
         let mut driver = platform::make_driver(surface);
-        sky_engine::probe(&ir, &mut *driver, AssetStore::with_dir(store.assets_dir()))
+        liverguard_engine::probe(&ir, &mut *driver, AssetStore::with_dir(store.assets_dir()))
     })
     .await
 }
@@ -317,7 +317,7 @@ pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, 
     let id = run_id.clone();
     let release = state.run_slot.clone();
     std::thread::Builder::new()
-        .name("sky-run".into())
+        .name("liverguard-run".into())
         .spawn(move || {
             let done = execute(&store, &ir, surface, &id, stop, &on_message);
             let _ = on_message.send(done);
@@ -345,7 +345,7 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, run_id: &str, stop:
     };
 
     let assets = AssetStore::with_dir(store.assets_dir());
-    match sky_engine::run_local(ir, &mut *driver, assets, run_id, stop, Some(sink)) {
+    match liverguard_engine::run_local(ir, &mut *driver, assets, run_id, stop, Some(sink)) {
         Err(message) => failed(message),
         Ok((result, reporter)) => {
             let mut record = result.to_json();

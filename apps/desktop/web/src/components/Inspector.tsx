@@ -216,8 +216,8 @@ export function Inspector() {
           {kind === 'setVar' && (
             <>
               <Field label="变量名">
-                <Input list="sky-set-vars" value={str(params.name)} onChange={(e) => set({ name: e.target.value })} />
-                <datalist id="sky-set-vars">
+                <Input list="liverguard-set-vars" value={str(params.name)} onChange={(e) => set({ name: e.target.value })} />
+                <datalist id="liverguard-set-vars">
                   {vars.map((v) => (
                     <option key={v} value={v} />
                   ))}

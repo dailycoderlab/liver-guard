@@ -1,5 +1,5 @@
 // Regenerates src/ir/generated.ts from the Rust schema.
-//   cargo run -q -p sky-ir --example schema > src/ir.schema.json && pnpm gen:types
+//   cargo run -q -p liverguard-ir --example schema > src/ir.schema.json && pnpm gen:types
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { compile } from 'json-schema-to-typescript';
 
@@ -31,7 +31,7 @@ for (const name of ['TemplateTarget', 'PointTarget']) {
 }
 
 const ts = await compile(schema, 'IrDoc', {
-  bannerComment: '/* Generated from the Rust IR schema (crates/sky-ir). Do not edit; run `pnpm gen:types`. */',
+  bannerComment: '/* Generated from the Rust IR schema (crates/liverguard-ir). Do not edit; run `pnpm gen:types`. */',
   additionalProperties: false,
   unreachableDefinitions: true,
   style: { singleQuote: true, semi: true },

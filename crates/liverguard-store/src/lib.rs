@@ -1,6 +1,6 @@
 //! Local, atomically written scripts, template assets and run history.
 //!
-//! Layout under the root (default `~/.sky`):
+//! Layout under the root (default `~/.liverguard`):
 //!
 //! ```text
 //! scripts/<id>.json   one script per file: { id, name, ir }
@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sky_ir::IrDoc;
+use liverguard_ir::IrDoc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -52,13 +52,13 @@ pub struct LocalStore {
     lock: Mutex<()>,
 }
 
-/// `$SKY_HOME` when set, otherwise `~/.sky` (`%USERPROFILE%\.sky` on Windows).
+/// `$LIVERGUARD_HOME` when set, otherwise `~/.liverguard` (`%USERPROFILE%\.liverguard` on Windows).
 pub fn default_root() -> PathBuf {
-    if let Some(custom) = std::env::var_os("SKY_HOME").filter(|v| !v.is_empty()) {
+    if let Some(custom) = std::env::var_os("LIVERGUARD_HOME").filter(|v| !v.is_empty()) {
         return PathBuf::from(custom);
     }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
-    home.unwrap_or_else(|| PathBuf::from(".")).join(".sky")
+    home.unwrap_or_else(|| PathBuf::from(".")).join(".liverguard")
 }
 
 impl LocalStore {
@@ -104,7 +104,7 @@ impl LocalStore {
     fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
         let parent = path.parent().ok_or_else(|| StoreError::Invalid("path has no parent".into()))?;
         fs::create_dir_all(parent)?;
-        let temp = parent.join(format!(".sky-{}", uuid::Uuid::new_v4().simple()));
+        let temp = parent.join(format!(".liverguard-{}", uuid::Uuid::new_v4().simple()));
         let result = (|| -> std::io::Result<()> {
             let mut file = fs::File::create(&temp)?;
             file.write_all(data)?;
@@ -313,7 +313,7 @@ mod tests {
         let (_dir, store) = store();
         let record = store.create_script("One", IrDoc::empty("x")).unwrap();
         let mut ir = IrDoc::empty("renamed-in-editor");
-        ir.vars.insert("n".into(), sky_ir::VarValue::Num(3.0));
+        ir.vars.insert("n".into(), liverguard_ir::VarValue::Num(3.0));
         store.save_script(&record.id, ir).unwrap();
         let loaded = store.get_script(&record.id).unwrap();
         assert_eq!(loaded.ir.meta.name, "One");

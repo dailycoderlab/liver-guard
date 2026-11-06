@@ -1,6 +1,6 @@
 [package]
-name = "sky-ir"
-description = "Sky IR v2: script graph model, geometry and validation"
+name = "liverguard-ir"
+description = "LiverGuard IR v2: script graph model, geometry and validation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

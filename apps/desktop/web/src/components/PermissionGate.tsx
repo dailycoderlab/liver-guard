@@ -29,7 +29,7 @@ export function PermissionGate({ children }: { children: React.ReactNode }) {
         <div className="mb-3 flex items-center gap-2 text-base font-semibold text-amber-300">
           <ShieldAlert size={18} /> 需要系统权限
         </div>
-        <p className="text-mute">Sky 需要下列权限才能截图和模拟点击。授权对象是 <b className="text-ink">{info.owner}</b>，授权后会自动继续。</p>
+        <p className="text-mute">LiverGuard 需要下列权限才能截图和模拟点击。授权对象是 <b className="text-ink">{info.owner}</b>，授权后会自动继续。</p>
         <ul className="my-4 list-disc pl-5 text-ink">
           {info.problems.map((p) => (
             <li key={p}>{p}</li>

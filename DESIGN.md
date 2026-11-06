@@ -1,6 +1,6 @@
-# Sky 架构
+# LiverGuard 架构
 
-Sky 是纯本地工具：画布编辑、截图、图像识别、脚本执行和全部数据都在桌面客户端内完成，没有服务端、账号或云同步。启动、打包和使用说明见 [README.md](README.md)。
+LiverGuard 是纯本地工具：画布编辑、截图、图像识别、脚本执行和全部数据都在桌面客户端内完成，没有服务端、账号或云同步。启动、打包和使用说明见 [README.md](README.md)。
 
 ## 分层
 
@@ -9,15 +9,15 @@ apps/desktop/web        React 19 + @xyflow/react：画布、属性面板、实�
         │  invoke / Channel（JSON 命令；二进制画面帧）
 apps/desktop/src-tauri  Tauri 2 外壳：命令、实时画面线程、运行线程、冻结帧
         │
-crates/sky-engine ── Driver 抽象 + 图解释器
-crates/sky-vision ── 模板匹配、控件检测、模板裁剪（OpenCV）
-crates/sky-ir     ── IR v2 数据模型与校验（也是前端类型的来源）
-crates/sky-store  ── ~/.sky 本地存储
-crates/sky-driver-mac / sky-driver-win ── 各平台的截图、输入、窗口、权限
-crates/sky-cli    ── 与桌面应用共用同一套核心的命令行
+crates/liverguard-engine ── Driver 抽象 + 图解释器
+crates/liverguard-vision ── 模板匹配、控件检测、模板裁剪（OpenCV）
+crates/liverguard-ir     ── IR v2 数据模型与校验（也是前端类型的来源）
+crates/liverguard-store  ── ~/.liverguard 本地存储
+crates/liverguard-driver-mac / liverguard-driver-win ── 各平台的截图、输入、窗口、权限
+crates/liverguard-cli    ── 与桌面应用共用同一套核心的命令行
 ```
 
-平台相关代码只存在于两个 `sky-driver-*` crate 和外壳里的 `platform.rs`、CLI 里的 `platform.rs`；匹配、等待、分支、重试、报告都在平台无关的 `sky-engine` / `sky-vision` 里，两个平台跑的是同一份代码。
+平台相关代码只存在于两个 `liverguard-driver-*` crate 和外壳里的 `platform.rs`、CLI 里的 `platform.rs`；匹配、等待、分支、重试、报告都在平台无关的 `liverguard-engine` / `liverguard-vision` 里，两个平台跑的是同一份代码。
 
 ## 脚本 IR v2
 
@@ -29,11 +29,11 @@ crates/sky-cli    ── 与桌面应用共用同一套核心的命令行
 - 目标（`targets`）分模板目标和坐标点目标。模板目标记录素材 SHA-256、素材像素尺寸、录制时的缩放与逻辑宽度、搜索范围（归一化）、锚点、匹配策略与阈值；坐标点目标只记录屏幕比例位置，不做图像匹配。
 - 条件可以引用目标可见性、变量比较，并可用 `all` / `any` / `not` 组合。
 
-`sky-ir` 用 `schemars` 导出 JSON Schema，`apps/desktop/web/scripts/gen-types.mjs` 把它转成 `src/ir/generated.ts`，前后端对脚本的理解来自同一处定义。
+`liverguard-ir` 用 `schemars` 导出 JSON Schema，`apps/desktop/web/scripts/gen-types.mjs` 把它转成 `src/ir/generated.ts`，前后端对脚本的理解来自同一处定义。
 
 ## 解释器
 
-`sky-engine` 的 `Interpreter` 沿连线走图，每个节点按 `Driver` 的几个原语（`bounds` / `capture` / `tap` / `swipe` / `key` / `text`，另有可选的 `ax_at`）执行。保护机制：
+`liverguard-engine` 的 `Interpreter` 沿连线走图，每个节点按 `Driver` 的几个原语（`bounds` / `capture` / `tap` / `swipe` / `key` / `text`，另有可选的 `ax_at`）执行。保护机制：
 
 - 每个节点可设 `maxVisits`；`loop` 无限循环有迭代上限；`call` 递归有深度上限；整体有 `maxDurationMs`。
 - 连续多个动作而画面没有变化会触发**停滞保护**。
@@ -63,7 +63,7 @@ crates/sky-cli    ── 与桌面应用共用同一套核心的命令行
 
 ## 本地数据
 
-所有状态都在 `~/.sky/`（`SKY_HOME` 可覆盖），由 `sky-store::LocalStore` 原子写入：
+所有状态都在 `~/.liverguard/`（`LIVERGUARD_HOME` 可覆盖），由 `liverguard-store::LocalStore` 原子写入：
 
 - `scripts/<id>.json`：脚本全部内容，没有草稿/版本之分，保存即覆盖。
 - `assets/<sha256>.png`：模板素材，按内容寻址，缺失即报错，不会去网络补取。
@@ -76,12 +76,12 @@ crates/sky-cli    ── 与桌面应用共用同一套核心的命令行
 | 项 | 说明 |
 | --- | --- |
 | 类型生成 | 计划写 `tauri-specta`，实际 IR 类型用 `schemars` → JSON Schema → TypeScript，命令手写。原因见上。 |
-| 旧实现 | Python / PySide6 实现已整体删除，不迁移旧脚本；旧 pytest 里与界面相关的用例随之作废，与匹配、解释器相关的场景由 Rust 的对拍夹具（13 个匹配场景 + 2 个坐标点场景）和 `sky-engine` 的 40 个图测试覆盖。 |
+| 旧实现 | Python / PySide6 实现已整体删除，不迁移旧脚本；旧 pytest 里与界面相关的用例随之作废，与匹配、解释器相关的场景由 Rust 的对拍夹具（13 个匹配场景 + 2 个坐标点场景）和 `liverguard-engine` 的 40 个图测试覆盖。 |
 | OpenCV 版本 | 对拍夹具由 OpenCV 5.0.0 生成，Rust 侧用 4.12.0；在得分 ±0.01、位置 ±1 像素内一致。 |
-| macOS 真机 | 已在本机验证：权限检测、全屏与单窗口 ScreenCaptureKit 截图（Retina 缩放 2.0）、CGEvent 点击（点击落点与预期的全局坐标一致）、`sky doctor/windows/capture/probe/run`，以及桌面应用里的列表、画布、实时预览、冻结、候选检测、模板创建、探测、运行（含失败节点高亮与运行记录落盘）。 |
+| macOS 真机 | 已在本机验证：权限检测、全屏与单窗口 ScreenCaptureKit 截图（Retina 缩放 2.0）、CGEvent 点击（点击落点与预期的全局坐标一致）、`liverguard doctor/windows/capture/probe/run`，以及桌面应用里的列表、画布、实时预览、冻结、候选检测、模板创建、探测、运行（含失败节点高亮与运行记录落盘）。 |
 | 真实匹配 | 在真实窗口截图上，Rust 与旧 Python 实现得分完全一致（0.7874644994735718）。 |
-| 打包体积 | macOS arm64 release 的 `Sky.app` 为 14 MB，OpenCV 静态链接，只依赖系统框架（WebKit、ScreenCaptureKit 等）；同类 PyInstaller 打包通常是几百 MB（未在本机量过）。 |
-| Windows | **未验证。** `sky-driver-win` 的平台层（不含 OpenCV 的部分）通过了 `cargo check --target x86_64-pc-windows-msvc --no-default-features`；`Driver` 实现、`apps/desktop/src-tauri` 里 Windows 分支、Windows Graphics Capture 的实际截图、`SendInput`、WebView2 与 WKWebView 的画布一致性、Windows 安装包体积，都没有在真实 Windows 上运行过。Windows 输入使用物理像素坐标，也还没在多显示器、不同缩放下验证。 |
+| 打包体积 | macOS arm64 release 的 `LiverGuard.app` 为 14 MB，OpenCV 静态链接，只依赖系统框架（WebKit、ScreenCaptureKit 等）；同类 PyInstaller 打包通常是几百 MB（未在本机量过）。 |
+| Windows | **未验证。** `liverguard-driver-win` 的平台层（不含 OpenCV 的部分）通过了 `cargo check --target x86_64-pc-windows-msvc --no-default-features`；`Driver` 实现、`apps/desktop/src-tauri` 里 Windows 分支、Windows Graphics Capture 的实际截图、`SendInput`、WebView2 与 WKWebView 的画布一致性、Windows 安装包体积，都没有在真实 Windows 上运行过。Windows 输入使用物理像素坐标，也还没在多显示器、不同缩放下验证。 |
 | 签名与公证 | 产物只有 ad-hoc 签名，Developer ID 签名和公证没有做（需要证书与 Apple 账号）。 |
 | 画面一致性 | 画布在 macOS 的 WKWebView 里渲染正常；与 Windows WebView2 的对比无法在本机完成。 |
 | 移动端 | 不做。`Driver` 抽象为以后接 ADB / iOS 留了位置，但仓库里没有任何移动端代码。 |
@@ -90,6 +90,6 @@ crates/sky-cli    ── 与桌面应用共用同一套核心的命令行
 
 - 仅 macOS 和 Windows 桌面。
 - 截图、输入和窗口焦点受操作系统权限、其他窗口遮挡及应用保护机制影响，无法保证所有应用均能自动化。
-- 全屏模式下 Sky 自己的窗口也会出现在画面里；运行脚本前应把目标窗口放到前面，或改用单窗口模式。
-- 脚本不会跨机器同步：换电脑需要自行复制 `~/.sky/`，模板素材也必须一并带走。
+- 全屏模式下 LiverGuard 自己的窗口也会出现在画面里；运行脚本前应把目标窗口放到前面，或改用单窗口模式。
+- 脚本不会跨机器同步：换电脑需要自行复制 `~/.liverguard/`，模板素材也必须一并带走。
 - 列表里看不到无法解析的脚本（例如旧的 v1 文件）；它们不会被删除，也不会提示。

@@ -9,7 +9,7 @@ use core_graphics::window::{
     copy_window_info, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly,
 };
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
-use sky_ir::Rect;
+use liverguard_ir::Rect;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowInfo {

@@ -3,7 +3,7 @@
 //! Native controls report an exact frame; games draw their own UI and expose
 //! nothing, so this is an opportunistic first candidate. Every failure is `None`.
 
-use sky_ir::Rect;
+use liverguard_ir::Rect;
 use windows::Win32::Foundation::POINT;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use sky_ir::Rect;
+use liverguard_ir::Rect;
 
 #[derive(Debug, Clone)]
 pub struct TrackEntry {

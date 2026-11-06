@@ -5,23 +5,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use sky_engine::testing::{FakeDriver, GraphBuilder, Screen};
-use sky_engine::{Interpreter, NodeState, Reporter, RunEvent, RunResult, RunState};
-use sky_ir::node::{handle, *};
-use sky_ir::{CompareOp, Condition, NodeKind as K, VarValue};
+use liverguard_engine::testing::{FakeDriver, GraphBuilder, Screen};
+use liverguard_engine::{Interpreter, NodeState, Reporter, RunEvent, RunResult, RunState};
+use liverguard_ir::node::{handle, *};
+use liverguard_ir::{CompareOp, Condition, NodeKind as K, VarValue};
 
-fn run_with(ir: &sky_ir::IrDoc, screen: &Screen, driver: &mut FakeDriver) -> (RunResult, Reporter) {
+fn run_with(ir: &liverguard_ir::IrDoc, screen: &Screen, driver: &mut FakeDriver) -> (RunResult, Reporter) {
     let stop = Arc::new(AtomicBool::new(false));
     run_stoppable(ir, screen, driver, stop)
 }
 
-fn run_stoppable(ir: &sky_ir::IrDoc, screen: &Screen, driver: &mut FakeDriver, stop: Arc<AtomicBool>) -> (RunResult, Reporter) {
+fn run_stoppable(ir: &liverguard_ir::IrDoc, screen: &Screen, driver: &mut FakeDriver, stop: Arc<AtomicBool>) -> (RunResult, Reporter) {
     let mut interpreter = Interpreter::new(ir, driver, screen.resolver(), Reporter::new("t"), stop);
     let result = interpreter.run();
     (result, interpreter.into_reporter())
 }
 
-fn run(ir: &sky_ir::IrDoc, screen: &Screen) -> (RunResult, Reporter, FakeDriver) {
+fn run(ir: &liverguard_ir::IrDoc, screen: &Screen) -> (RunResult, Reporter, FakeDriver) {
     let mut driver = FakeDriver::blank();
     let (result, reporter) = run_with(ir, screen, &mut driver);
     (result, reporter, driver)
@@ -351,7 +351,7 @@ fn a_while_loop_exits_when_the_condition_turns_false() {
     let sink_screen = screen.clone();
     let seen = Arc::new(Mutex::new(0));
     let counter = seen.clone();
-    let sink: sky_engine::EventSink = Arc::new(move |event| {
+    let sink: liverguard_engine::EventSink = Arc::new(move |event| {
         if let RunEvent::Log { event, .. } = event {
             if event == "script_log" {
                 let mut n = counter.lock().unwrap();
@@ -582,7 +582,7 @@ fn key_text_and_swipe_reach_the_driver() {
     assert_eq!(driver.swipes, vec![(120.0, 110.0, 120.0, 50.0)]);
 }
 
-fn jittered(offset_ratio: f64) -> sky_ir::IrDoc {
+fn jittered(offset_ratio: f64) -> liverguard_ir::IrDoc {
     GraphBuilder::new(&["a"])
         .node(
             "t",

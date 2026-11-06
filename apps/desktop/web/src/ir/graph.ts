@@ -6,25 +6,25 @@ import type { Connection, Edge, Node } from '@xyflow/react';
 import { outputHandles, targetRefs } from './catalog';
 import type { IrDoc, IrEdge, IrFlow, IrNode, NodeType } from './model';
 
-export interface SkyNodeData extends Record<string, unknown> {
+export interface LiverGuardNodeData extends Record<string, unknown> {
   kind: NodeType;
   params: Record<string, unknown>;
   label?: string;
   maxVisits?: number;
 }
 
-export type SkyNode = Node<SkyNodeData, 'sky'>;
-export type SkyEdge = Edge;
+export type LiverGuardNode = Node<LiverGuardNodeData, 'liverguard'>;
+export type LiverGuardEdge = Edge;
 
 export interface FlowState {
-  nodes: SkyNode[];
-  edges: SkyEdge[];
+  nodes: LiverGuardNode[];
+  edges: LiverGuardEdge[];
 }
 
-export function toFlowNode(node: IrNode): SkyNode {
+export function toFlowNode(node: IrNode): LiverGuardNode {
   return {
     id: node.id,
-    type: 'sky',
+    type: 'liverguard',
     position: { x: node.pos.x, y: node.pos.y },
     data: { kind: node.type, params: { ...node.data }, label: node.label, maxVisits: node.maxVisits },
     // The start node is the flow's anchor: it can move but never be deleted.
@@ -32,7 +32,7 @@ export function toFlowNode(node: IrNode): SkyNode {
   };
 }
 
-export function toFlowEdge(edge: IrEdge): SkyEdge {
+export function toFlowEdge(edge: IrEdge): LiverGuardEdge {
   return {
     id: edge.id,
     source: edge.source,
@@ -46,7 +46,7 @@ export function toFlowState(flow: IrFlow): FlowState {
   return { nodes: flow.nodes.map(toFlowNode), edges: flow.edges.map(toFlowEdge) };
 }
 
-export function fromFlowNode(node: SkyNode): IrNode {
+export function fromFlowNode(node: LiverGuardNode): IrNode {
   const out: IrNode = {
     id: node.id,
     type: node.data.kind,
@@ -58,7 +58,7 @@ export function fromFlowNode(node: SkyNode): IrNode {
   return out;
 }
 
-export function fromFlowEdge(edge: SkyEdge): IrEdge {
+export function fromFlowEdge(edge: LiverGuardEdge): IrEdge {
   const out: IrEdge = { id: edge.id, source: edge.source, sourceHandle: edge.sourceHandle ?? 'next', target: edge.target };
   if (edge.targetHandle) out.targetHandle = edge.targetHandle;
   return out;
@@ -85,13 +85,13 @@ export function uniqueName(taken: Iterable<string>, base: string): string {
   return `${base}_${n}`;
 }
 
-export function createNode(flow: FlowState, kind: NodeType, params: Record<string, unknown>, position: { x: number; y: number }): SkyNode {
+export function createNode(flow: FlowState, kind: NodeType, params: Record<string, unknown>, position: { x: number; y: number }): LiverGuardNode {
   return {
     id: nextId(
       flow.nodes.map((n) => n.id),
       'n',
     ),
-    type: 'sky',
+    type: 'liverguard',
     position,
     data: { kind, params },
     deletable: kind !== 'start',
@@ -103,7 +103,7 @@ export function createNode(flow: FlowState, kind: NodeType, params: Record<strin
  * used handle replaces its old edge. Returns the same array when the
  * connection is not allowed.
  */
-export function connect(flow: FlowState, connection: Connection): SkyEdge[] {
+export function connect(flow: FlowState, connection: Connection): LiverGuardEdge[] {
   const { source, target } = connection;
   const sourceHandle = connection.sourceHandle ?? 'next';
   if (!source || !target) return flow.edges;
@@ -121,7 +121,7 @@ export function connect(flow: FlowState, connection: Connection): SkyEdge[] {
 }
 
 /** Drop edges whose source handle no longer exists (e.g. a removed switch case). */
-export function pruneEdges(flow: FlowState): SkyEdge[] {
+export function pruneEdges(flow: FlowState): LiverGuardEdge[] {
   const ids = new Set(flow.nodes.map((n) => n.id));
   const handles = new Map(flow.nodes.map((n) => [n.id, new Set(outputHandles(n.data.kind, n.data.params).map((h) => h.id))]));
   return flow.edges.filter((e) => ids.has(e.source) && ids.has(e.target) && handles.get(e.source)?.has(e.sourceHandle ?? 'next'));
@@ -137,7 +137,7 @@ export function removeNodes(flow: FlowState, ids: Set<string>): FlowState {
  * Add `node` after `after`, on its first free output handle (preferring the
  * success path). Returns the new edge list.
  */
-export function appendAfter(flow: FlowState, after: string | undefined, node: SkyNode): SkyEdge[] {
+export function appendAfter(flow: FlowState, after: string | undefined, node: LiverGuardNode): LiverGuardEdge[] {
   if (!after) return flow.edges;
   const from = flow.nodes.find((n) => n.id === after);
   if (!from) return flow.edges;
@@ -178,7 +178,7 @@ export function unusedTargets(doc: Pick<IrDoc, 'targets' | 'flows'>): string[] {
 }
 
 /** Left-to-right layered layout, for the "整理布局" button only. */
-export function autoLayout(flow: FlowState, size = { width: 220, height: 84 }): SkyNode[] {
+export function autoLayout(flow: FlowState, size = { width: 220, height: 84 }): LiverGuardNode[] {
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 90 });
   graph.setDefaultEdgeLabel(() => ({}));

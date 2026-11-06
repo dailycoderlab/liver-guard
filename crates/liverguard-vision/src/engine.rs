@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use opencv::prelude::*;
 use opencv::core::Mat;
-use sky_ir::geometry::{point_in_box, py_round, roi_to_pixels, Rect};
-use sky_ir::{Multi, PointTarget, Strategy, Target, TemplateTarget, Verify};
+use liverguard_ir::geometry::{point_in_box, py_round, roi_to_pixels, Rect};
+use liverguard_ir::{Multi, PointTarget, Strategy, Target, TemplateTarget, Verify};
 
 use crate::assets::AssetStore;
 use crate::frame::Frame;

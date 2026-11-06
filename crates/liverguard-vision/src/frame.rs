@@ -7,7 +7,7 @@ use std::time::Instant;
 use opencv::prelude::*;
 use opencv::core::{Mat, MatTraitConst, MatTraitConstManual, Size, Vector};
 use opencv::{imgcodecs, imgproc};
-use sky_ir::geometry::{py_round, Bounds, Rect};
+use liverguard_ir::geometry::{py_round, Bounds, Rect};
 
 use crate::normalize::Normalized;
 use crate::util::{self, Result, VisionError};

@@ -69,19 +69,19 @@ select {
   height: 11px;
   border-width: 2px;
 }
-.react-flow__handle.sky-handle-ok {
+.react-flow__handle.liverguard-handle-ok {
   background: #34d399;
 }
-.react-flow__handle.sky-handle-fail {
+.react-flow__handle.liverguard-handle-fail {
   background: #f87171;
 }
-.react-flow__handle.sky-handle-in {
+.react-flow__handle.liverguard-handle-in {
   background: #cbd5e1;
 }
 .react-flow__attribution {
   display: none;
 }
-@keyframes sky-pulse {
+@keyframes liverguard-pulse {
   0%,
   100% {
     box-shadow: 0 0 0 0 rgb(76 141 255 / 0.55);
@@ -90,6 +90,6 @@ select {
     box-shadow: 0 0 0 7px rgb(76 141 255 / 0);
   }
 }
-.sky-running {
-  animation: sky-pulse 1.1s ease-in-out infinite;
+.liverguard-running {
+  animation: liverguard-pulse 1.1s ease-in-out infinite;
 }

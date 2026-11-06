@@ -1,6 +1,8 @@
-# Sky
+# LiverGuard（护肝）
 
-Sky 是纯本地的桌面脚本编辑与执行工具：脚本以**节点画布**编辑（拖拽、连线、条件分支、循环、重试），用 OpenCV 在本机截图并匹配模板后执行点击、拖动和输入。脚本、模板素材和运行记录都存在本机，不需要账号，也不联网。
+> 挂机护肝不费心
+
+LiverGuard（中文名「护肝」）是纯本地的桌面脚本编辑与执行工具：脚本以**节点画布**编辑（拖拽、连线、条件分支、循环、重试），用 OpenCV 在本机截图并匹配模板后执行点击、拖动和输入。脚本、模板素材和运行记录都存在本机，不需要账号，也不联网。
 
 技术栈：Tauri 2 + React / React Flow（界面）+ Rust 核心（脚本模型、匹配、解释器、平台驱动）。macOS 和 Windows 共用同一套核心代码。架构见 [DESIGN.md](DESIGN.md)。
 
@@ -8,13 +10,13 @@ Sky 是纯本地的桌面脚本编辑与执行工具：脚本以**节点画布**
 
 | 路径 | 作用 |
 | --- | --- |
-| `crates/sky-ir` | 脚本 IR v2：节点、连线、目标、校验；同时导出 JSON Schema |
-| `crates/sky-vision` | OpenCV 模板匹配、多尺度、控件候选检测、模板裁剪 |
-| `crates/sky-engine` | `Driver` 抽象与图解释器（循环、重试、分支、停滞与超时保护） |
-| `crates/sky-store` | 本地脚本、素材、运行记录（原子写入） |
-| `crates/sky-driver-mac` | macOS：ScreenCaptureKit 截图、CGEvent 输入、权限、窗口枚举 |
-| `crates/sky-driver-win` | Windows：Windows Graphics Capture、SendInput、窗口枚举 |
-| `crates/sky-cli` | 命令行 `sky`：`doctor` / `windows` / `capture` / `probe` / `run` |
+| `crates/liverguard-ir` | 脚本 IR v2：节点、连线、目标、校验；同时导出 JSON Schema |
+| `crates/liverguard-vision` | OpenCV 模板匹配、多尺度、控件候选检测、模板裁剪 |
+| `crates/liverguard-engine` | `Driver` 抽象与图解释器（循环、重试、分支、停滞与超时保护） |
+| `crates/liverguard-store` | 本地脚本、素材、运行记录（原子写入） |
+| `crates/liverguard-driver-mac` | macOS：ScreenCaptureKit 截图、CGEvent 输入、权限、窗口枚举 |
+| `crates/liverguard-driver-win` | Windows：Windows Graphics Capture、SendInput、窗口枚举 |
+| `crates/liverguard-cli` | 命令行 `liverguard`：`doctor` / `windows` / `capture` / `probe` / `run` |
 | `apps/desktop/src-tauri` | Tauri 外壳，只负责把核心能力暴露成命令 |
 | `apps/desktop/web` | 画布编辑器（React 19、`@xyflow/react`、Zustand、Tailwind 4） |
 
@@ -44,11 +46,11 @@ Rust 的 `opencv` crate 在编译期需要找到 OpenCV 头文件和 libclang。
 ## 命令行
 
 ```sh
-cargo run -p sky-cli -- doctor                  # 检查权限、截图和坐标
-cargo run -p sky-cli -- windows                 # 列出可控窗口
-cargo run -p sky-cli -- capture --out shot.png  # 保存一张截图
-cargo run -p sky-cli -- probe --script <id>     # 只定位模板，不点击
-cargo run -p sky-cli -- run   --script <id>     # 运行脚本
+cargo run -p liverguard-cli -- doctor                  # 检查权限、截图和坐标
+cargo run -p liverguard-cli -- windows                 # 列出可控窗口
+cargo run -p liverguard-cli -- capture --out shot.png  # 保存一张截图
+cargo run -p liverguard-cli -- probe --script <id>     # 只定位模板，不点击
+cargo run -p liverguard-cli -- run   --script <id>     # 运行脚本
 ```
 
 `run` / `probe` 也可以用 `--file` 指定 IR JSON，用 `--window <名称或 #编号>` 限定到单个窗口。
@@ -65,7 +67,7 @@ cargo run -p sky-cli -- run   --script <id>     # 运行脚本
 
 ### 本地数据
 
-默认在 `~/.sky/`，设置环境变量 `SKY_HOME` 可改到别处：
+默认在 `~/.liverguard/`，设置环境变量 `LIVERGUARD_HOME` 可改到别处：
 
 - `scripts/`：一个脚本一个 JSON 文件（IR v2）。
 - `assets/`：模板素材，按 SHA-256 命名的无损 PNG。
@@ -75,8 +77,8 @@ cargo run -p sky-cli -- run   --script <id>     # 运行脚本
 
 ### 权限
 
-- macOS 需要「屏幕录制」和「辅助功能」。权限记在**负责进程**上：打包后的 `Sky.app`（标识 `com.sky.desktop`）会作为 “Sky” 出现在系统设置里；用 `tauri dev` 或直接运行二进制时，权限记在启动它的终端或 IDE 上。授予屏幕录制后需要完全退出并重启程序才生效。应用启动后若缺权限，界面会显示权限引导。
-- Windows 使用 Windows Graphics Capture（Windows 10 1803+）。目标程序以管理员身份运行时，Sky 也需要以管理员身份运行，否则输入会被系统拒绝。
+- macOS 需要「屏幕录制」和「辅助功能」。权限记在**负责进程**上：打包后的 `LiverGuard.app`（标识 `com.sky.liverguard`）会作为 “LiverGuard” 出现在系统设置里；用 `tauri dev` 或直接运行二进制时，权限记在启动它的终端或 IDE 上。授予屏幕录制后需要完全退出并重启程序才生效。应用启动后若缺权限，界面会显示权限引导。
+- Windows 使用 Windows Graphics Capture（Windows 10 1803+）。目标程序以管理员身份运行时，LiverGuard 也需要以管理员身份运行，否则输入会被系统拒绝。
 - 请勿在存在反作弊或禁止自动化条款的应用中使用。
 
 ## 测试
@@ -86,7 +88,7 @@ cargo test --workspace     # Rust：IR、匹配、解释器、存储
 cd apps/desktop/web && pnpm test
 ```
 
-`crates/sky-vision/tests/golden/` 里是匹配对拍夹具：它由已删除的 Python 实现（OpenCV 5.0.0）生成，当前 Rust（OpenCV 4.12）要在得分 ±0.01、点击点 ±1 个逻辑点内复现。夹具现在是冻结的，没有再生成脚本。
+`crates/liverguard-vision/tests/golden/` 里是匹配对拍夹具：它由已删除的 Python 实现（OpenCV 5.0.0）生成，当前 Rust（OpenCV 4.12）要在得分 ±0.01、点击点 ±1 个逻辑点内复现。夹具现在是冻结的，没有再生成脚本。
 
 自动化测试使用模拟驱动，不能替代真机验证：截图、输入、窗口焦点和权限需要在真实的 macOS 与 Windows 桌面上分别检查。
 
@@ -96,7 +98,7 @@ cd apps/desktop/web && pnpm test
 
 ```sh
 cd apps/desktop
-./web/node_modules/.bin/tauri build --bundles app    # macOS，产物在 target/release/bundle/macos/Sky.app
+./web/node_modules/.bin/tauri build --bundles app    # macOS，产物在 target/release/bundle/macos/LiverGuard.app
 ```
 
 当前产物是 ad-hoc 签名，未公证；对外分发前还需要：

@@ -18,7 +18,7 @@ export const LIMITS = {
 export const MIN_CENTER_WIDTH = 360;
 export const MIN_CENTER_HEIGHT = 200;
 
-const STORAGE_KEY = 'sky.layout.v1';
+const STORAGE_KEY = 'liverguard.layout.v1';
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));

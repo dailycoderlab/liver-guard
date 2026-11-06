@@ -18,8 +18,8 @@ import type {
   WindowInfo,
 } from './types';
 
-const STORE_KEY = 'sky.mock.scripts';
-const RUNS_KEY = 'sky.mock.runs';
+const STORE_KEY = 'liverguard.mock.scripts';
+const RUNS_KEY = 'liverguard.mock.runs';
 const SCENE = { w: 960, h: 600 };
 
 function load<T>(key: string, fallback: T): T {

@@ -59,7 +59,7 @@ export function ConditionEditor({ value, onChange, depth = 0 }: { value: Conditi
       {cond.kind === 'missing' && <TargetSelect value={cond.target} onChange={(target) => onChange({ ...cond, target })} />}
       {cond.kind === 'var' && (
         <div className="grid grid-cols-[1fr_auto_1fr] gap-1.5">
-          <Input list="sky-vars" placeholder="变量名" value={cond.name} onChange={(e) => onChange({ ...cond, name: e.target.value })} />
+          <Input list="liverguard-vars" placeholder="变量名" value={cond.name} onChange={(e) => onChange({ ...cond, name: e.target.value })} />
           <Select className="w-24" value={cond.op ?? 'eq'} onChange={(e) => onChange({ ...cond, op: e.target.value as (typeof OPS)[number] })}>
             {OPS.map((op) => (
               <option key={op} value={op}>
@@ -68,7 +68,7 @@ export function ConditionEditor({ value, onChange, depth = 0 }: { value: Conditi
             ))}
           </Select>
           <Input placeholder="值" value={String(cond.value)} onChange={(e) => onChange({ ...cond, value: parseVarValue(e.target.value) })} />
-          <datalist id="sky-vars">
+          <datalist id="liverguard-vars">
             {vars.map((v) => (
               <option key={v} value={v} />
             ))}

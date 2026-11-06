@@ -4,8 +4,8 @@
 //! branching, retry and reporting live in the engine and are shared by every
 //! platform.
 
-use sky_ir::{Bounds, Rect};
-use sky_vision::Frame;
+use liverguard_ir::{Bounds, Rect};
+use liverguard_vision::Frame;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DriverError {

@@ -1,4 +1,4 @@
-//! Image matching for Sky.
+//! Image matching for LiverGuard.
 //!
 //! Everything here works on OpenCV `Mat`s (BGR, 8 bit). The matcher is a direct
 //! port of the reference implementation the golden fixtures were produced from,

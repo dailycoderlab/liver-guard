@@ -1,7 +1,7 @@
 //! Input injection through `SendInput`.
 //!
 //! Coordinates are physical pixels in virtual-screen space. Windows cannot inject
-//! into a window that runs at a higher integrity level (UIPI): run Sky elevated
+//! into a window that runs at a higher integrity level (UIPI): run LiverGuard elevated
 //! to drive an elevated game.
 
 use std::thread::sleep;
@@ -17,7 +17,7 @@ use crate::window::virtual_screen;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InputError {
-    #[error("输入被系统拒绝：目标可能以更高权限（管理员）运行，请以管理员身份运行 Sky")]
+    #[error("输入被系统拒绝：目标可能以更高权限（管理员）运行，请以管理员身份运行 LiverGuard")]
     Rejected,
     #[error("未知按键：{0}")]
     UnknownKey(String),

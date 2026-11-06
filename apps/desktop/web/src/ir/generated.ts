@@ -1,4 +1,4 @@
-/* Generated from the Rust IR schema (crates/sky-ir). Do not edit; run `pnpm gen:types`. */
+/* Generated from the Rust IR schema (crates/liverguard-ir). Do not edit; run `pnpm gen:types`. */
 
 /**
  * This interface was referenced by `IrDoc`'s JSON-Schema

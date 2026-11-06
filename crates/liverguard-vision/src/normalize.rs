@@ -8,7 +8,7 @@
 
 use opencv::core::{Mat, MatTraitConst, Size};
 use opencv::imgproc;
-use sky_ir::geometry::{py_round, Bounds, Rect};
+use liverguard_ir::geometry::{py_round, Bounds, Rect};
 
 use crate::util::{interpolation_for, Result, VisionError};
 

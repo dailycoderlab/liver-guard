@@ -3,8 +3,8 @@
 use opencv::prelude::*;
 use opencv::core::{self, no_array, Mat, MatTraitConst, MatTraitManual, Point, Scalar, CV_32F};
 use opencv::imgproc;
-use sky_ir::geometry::py_round;
-use sky_ir::{Mask, ScaleSpec};
+use liverguard_ir::geometry::py_round;
+use liverguard_ir::{Mask, ScaleSpec};
 
 use crate::util::{resize_by, std_dev, to_gray, Result};
 
@@ -115,7 +115,7 @@ pub fn scale_ladder(spec: &ScaleSpec) -> Vec<f64> {
         return vec![(low + high) / 2.0];
     }
     let step = (high - low) / (steps - 1) as f64;
-    (0..steps).map(|i| sky_ir::geometry::round_to(low + step * i as f64, 4)).collect()
+    (0..steps).map(|i| liverguard_ir::geometry::round_to(low + step * i as f64, 4)).collect()
 }
 
 /// Coarse-to-fine search over a scale ladder.

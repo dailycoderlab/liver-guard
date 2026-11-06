@@ -1,4 +1,4 @@
-//! Sky desktop: a thin Tauri shell over the shared Rust core.
+//! LiverGuard desktop: a thin Tauri shell over the shared Rust core.
 
 mod commands;
 mod platform;
@@ -34,5 +34,5 @@ pub fn run() {
             get_run,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Sky");
+        .expect("error while running LiverGuard");
 }

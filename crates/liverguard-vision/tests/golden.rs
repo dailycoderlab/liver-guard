@@ -11,12 +11,12 @@ use std::path::{Path, PathBuf};
 use opencv::core::{Mat, MatTraitConst, Vector};
 use opencv::imgcodecs;
 use serde::Deserialize;
-use sky_ir::geometry::{self, Bounds, Rect};
-use sky_ir::{ScaleSpec, Target};
-use sky_vision::normalize::template_factor;
-use sky_vision::tpl::scale_ladder;
-use sky_vision::verify::color_similarity;
-use sky_vision::{AssetStore, Frame, MatcherEngine};
+use liverguard_ir::geometry::{self, Bounds, Rect};
+use liverguard_ir::{ScaleSpec, Target};
+use liverguard_vision::normalize::template_factor;
+use liverguard_vision::tpl::scale_ladder;
+use liverguard_vision::verify::color_similarity;
+use liverguard_vision::{AssetStore, Frame, MatcherEngine};
 
 const SCORE_TOLERANCE: f64 = 0.01;
 const POINT_TOLERANCE: f64 = 1.0;

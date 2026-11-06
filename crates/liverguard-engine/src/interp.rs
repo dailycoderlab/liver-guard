@@ -16,11 +16,11 @@ use std::time::{Duration, Instant};
 
 use rand::Rng;
 use serde_json::json;
-use sky_ir::node::handle;
-use sky_ir::{
+use liverguard_ir::node::handle;
+use liverguard_ir::{
     CompareOp, Condition, Flow, IrDoc, Jitter, LoopMode, Node, NodeKind, Rect, SwipeData, Target, VarValue,
 };
-use sky_vision::{Frame, Hit, Resolver};
+use liverguard_vision::{Frame, Hit, Resolver};
 
 use crate::driver::Driver;
 use crate::error::{Reason, RunError, RunResultOf};
@@ -664,7 +664,7 @@ impl<'a> Interpreter<'a> {
         &mut self,
         flow: &'a Flow,
         node: &'a Node,
-        data: &'a sky_ir::LoopData,
+        data: &'a liverguard_ir::LoopData,
         depth: usize,
     ) -> RunResultOf<Option<Ended>> {
         let body = flow.next(&node.id, handle::BODY);

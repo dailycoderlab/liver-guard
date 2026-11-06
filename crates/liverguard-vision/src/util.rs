@@ -2,7 +2,7 @@
 
 use opencv::core::{Mat, MatTraitConst, MatTraitConstManual, Size, CV_8UC1, CV_8UC3};
 use opencv::imgproc;
-use sky_ir::geometry::py_round;
+use liverguard_ir::geometry::py_round;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VisionError {

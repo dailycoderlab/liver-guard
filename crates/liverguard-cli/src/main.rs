@@ -1,4 +1,4 @@
-//! `sky`: the command line front end of the Sky engine.
+//! `liverguard`: the command line front end of the LiverGuard engine.
 
 mod platform;
 
@@ -10,15 +10,15 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
-use sky_engine::{EventSink, RunEvent, RunState};
-use sky_ir::IrDoc;
-use sky_store::LocalStore;
-use sky_vision::AssetStore;
+use liverguard_engine::{EventSink, RunEvent, RunState};
+use liverguard_ir::IrDoc;
+use liverguard_store::LocalStore;
+use liverguard_vision::AssetStore;
 
 #[derive(Parser)]
-#[command(name = "sky", version, about = "Sky local script runner")]
+#[command(name = "liverguard", version, about = "LiverGuard local script runner")]
 struct Cli {
-    /// Data directory (default ~/.sky)
+    /// Data directory (default ~/.liverguard)
     #[arg(long, global = true)]
     root: Option<PathBuf>,
     #[command(subcommand)]
@@ -109,7 +109,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Schema => {
-            println!("{}", serde_json::to_string_pretty(&sky_ir::json_schema())?);
+            println!("{}", serde_json::to_string_pretty(&liverguard_ir::json_schema())?);
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -186,7 +186,7 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
     let mut driver = platform::make_driver(args.window.as_deref())?;
 
     if dry {
-        let rows = sky_engine::probe(&ir, &mut *driver, assets).map_err(|e| anyhow!(e))?;
+        let rows = liverguard_engine::probe(&ir, &mut *driver, assets).map_err(|e| anyhow!(e))?;
         println!("{}", serde_json::to_string_pretty(&rows)?);
         let all_ok = rows.iter().all(|row| row.ok);
         return Ok(if all_ok { ExitCode::SUCCESS } else { ExitCode::from(1) });
@@ -205,7 +205,7 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
 
     let run_id = uuid::Uuid::new_v4().simple().to_string();
     let sink: EventSink = Arc::new(print_event);
-    let (result, reporter) = sky_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, Some(sink)).map_err(|e| anyhow!(e))?;
+    let (result, reporter) = liverguard_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, Some(sink)).map_err(|e| anyhow!(e))?;
 
     let jsonl = reporter.jsonl();
     if let Some(path) = &args.log {

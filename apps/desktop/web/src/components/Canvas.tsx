@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { NODE_SPECS } from '@/ir/catalog';
 import type { NodeType } from '@/ir/model';
 import { selectFlow, useEditor } from '@/store/editor';
-import { SkyNodeComponent } from './SkyNode';
+import { LiverGuardNodeComponent } from './LiverGuardNode';
 
-const nodeTypes: NodeTypes = { sky: SkyNodeComponent };
-export const DRAG_MIME = 'application/x-sky-node';
+const nodeTypes: NodeTypes = { liverguard: LiverGuardNodeComponent };
+export const DRAG_MIME = 'application/x-liverguard-node';
 
 function CanvasInner() {
   const nodes = useEditor((s) => selectFlow(s).nodes);

@@ -1,13 +1,13 @@
 [package]
-name = "sky-vision"
-description = "Sky vision: template matching, normalization, control detection (OpenCV)"
+name = "liverguard-vision"
+description = "LiverGuard vision: template matching, normalization, control detection (OpenCV)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-sky-ir.workspace = true
+liverguard-ir.workspace = true
 opencv.workspace = true
 thiserror.workspace = true
 serde.workspace = true

@@ -1,6 +1,6 @@
 [package]
-name = "sky-driver-mac"
-description = "Sky macOS platform layer: ScreenCaptureKit capture, CGEvent input, Accessibility lookup"
+name = "liverguard-driver-mac"
+description = "LiverGuard macOS platform layer: ScreenCaptureKit capture, CGEvent input, Accessibility lookup"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,12 +9,12 @@ publish.workspace = true
 [features]
 default = ["driver"]
 # The `Driver` impl for the engine. Off, the crate is pure platform code with no OpenCV.
-driver = ["dep:sky-engine", "dep:sky-vision", "dep:opencv"]
+driver = ["dep:liverguard-engine", "dep:liverguard-vision", "dep:opencv"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sky-ir.workspace = true
-sky-engine = { workspace = true, optional = true }
-sky-vision = { workspace = true, optional = true }
+liverguard-ir.workspace = true
+liverguard-engine = { workspace = true, optional = true }
+liverguard-vision = { workspace = true, optional = true }
 opencv = { workspace = true, optional = true }
 thiserror.workspace = true
 screencapturekit = { version = "11", features = ["macos_14_0"] }

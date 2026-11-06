@@ -3,7 +3,7 @@
 //! macOS does not let an app grant itself either permission, and it never
 //! attributes it to a bare executable: TCC stores the *responsible* process,
 //! which for `cargo run` or a binary started from a terminal is that terminal or
-//! IDE. Only a packaged `Sky.app` gets its own entry in System Settings.
+//! IDE. Only a packaged `LiverGuard.app` gets its own entry in System Settings.
 //! [`responsible_application`] reports who will actually show up there.
 
 use std::process::Command;

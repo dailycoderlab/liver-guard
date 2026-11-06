@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 
-use sky_ir::Rect;
+use liverguard_ir::Rect;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};

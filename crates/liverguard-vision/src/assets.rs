@@ -8,7 +8,7 @@ use opencv::prelude::*;
 use opencv::core::{Mat, Vector};
 use opencv::imgcodecs;
 use sha2::{Digest, Sha256};
-use sky_ir::geometry::py_round;
+use liverguard_ir::geometry::py_round;
 
 use crate::util::{resize_by, Result, VisionError};
 

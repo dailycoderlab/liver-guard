@@ -1,6 +1,6 @@
 [package]
-name = "sky-driver-win"
-description = "Sky Windows platform layer: Windows.Graphics.Capture, SendInput, UI Automation"
+name = "liverguard-driver-win"
+description = "LiverGuard Windows platform layer: Windows.Graphics.Capture, SendInput, UI Automation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,12 +10,12 @@ publish.workspace = true
 default = ["driver"]
 # The `Driver` impl for the engine. Off, the crate is pure platform code with no OpenCV,
 # which is what `cargo check --target x86_64-pc-windows-msvc` uses from a Mac.
-driver = ["dep:sky-engine", "dep:sky-vision", "dep:opencv"]
+driver = ["dep:liverguard-engine", "dep:liverguard-vision", "dep:opencv"]
 
 [target.'cfg(windows)'.dependencies]
-sky-ir.workspace = true
-sky-engine = { workspace = true, optional = true }
-sky-vision = { workspace = true, optional = true }
+liverguard-ir.workspace = true
+liverguard-engine = { workspace = true, optional = true }
+liverguard-vision = { workspace = true, optional = true }
 opencv = { workspace = true, optional = true }
 thiserror.workspace = true
 

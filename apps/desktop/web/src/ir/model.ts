@@ -1,4 +1,4 @@
-// Editor-side view of IR v2. The wire shape matches crates/sky-ir; `generated.ts`
+// Editor-side view of IR v2. The wire shape matches crates/liverguard-ir; `generated.ts`
 // (from the Rust JSON Schema) is the source for `Target` and `Condition`.
 
 import type { Condition, Target } from './generated';

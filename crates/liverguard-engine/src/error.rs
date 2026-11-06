@@ -83,8 +83,8 @@ impl fmt::Display for RunError {
 
 impl std::error::Error for RunError {}
 
-impl From<sky_vision::VisionError> for RunError {
-    fn from(value: sky_vision::VisionError) -> Self {
+impl From<liverguard_vision::VisionError> for RunError {
+    fn from(value: liverguard_vision::VisionError) -> Self {
         RunError::new(Reason::Engine, value.to_string())
     }
 }

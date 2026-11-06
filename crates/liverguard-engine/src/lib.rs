@@ -1,4 +1,4 @@
-//! Sky engine: the `Driver` abstraction and the graph interpreter.
+//! LiverGuard engine: the `Driver` abstraction and the graph interpreter.
 //!
 //! Everything platform independent lives here; a platform only supplies a
 //! [`Driver`].
@@ -18,8 +18,8 @@ pub use interp::{Interpreter, RunResult, RunState};
 pub use report::{EventSink, LogLine, NodeState, Reporter, RunEvent};
 
 use serde::Serialize;
-use sky_ir::{IrDoc, Rect, Target};
-use sky_vision::{AssetStore, MatcherEngine};
+use liverguard_ir::{IrDoc, Rect, Target};
+use liverguard_vision::{AssetStore, MatcherEngine};
 
 /// Check a document and make sure every asset it needs is on disk.
 pub fn prepare(ir: &IrDoc, assets: &mut AssetStore) -> Result<(), String> {

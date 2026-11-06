@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    sky_desktop_lib::run()
+    liverguard_desktop_lib::run()
 }

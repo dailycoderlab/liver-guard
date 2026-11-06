@@ -4,9 +4,9 @@
 use opencv::prelude::MatTrait;
 use opencv::core::{Mat, MatTraitConst, Point, Rect as CvRect, Scalar, Vec3b, CV_8UC3};
 use opencv::imgproc::{self, FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA};
-use sky_ir::geometry::py_round;
-use sky_ir::{AssetBox, Bounds, Rect, Target, TemplateTarget};
-use sky_vision::{AssetStore, Frame, Hit, Resolver};
+use liverguard_ir::geometry::py_round;
+use liverguard_ir::{AssetBox, Bounds, Rect, Target, TemplateTarget};
+use liverguard_vision::{AssetStore, Frame, Hit, Resolver};
 
 use crate::driver::{Driver, DriverResult};
 
@@ -85,8 +85,8 @@ pub fn crop_asset(image: &Mat, center_pt: (f64, f64), size_pt: (f64, f64), scale
     let y = py_round(center_pt.1 * scale - size_pt.1 * scale / 2.0) as i32;
     let w = py_round(size_pt.0 * scale) as i32;
     let h = py_round(size_pt.1 * scale) as i32;
-    let patch = sky_vision::util::crop(image, x, y, w, h).unwrap();
-    sky_vision::frame::encode(&patch, ".png", &opencv::core::Vector::new()).unwrap()
+    let patch = liverguard_vision::util::crop(image, x, y, w, h).unwrap();
+    liverguard_vision::frame::encode(&patch, ".png", &opencv::core::Vector::new()).unwrap()
 }
 
 pub fn button_target(asset_bytes: &[u8], size_pt: (f64, f64), record_scale: f64, record_width: f64) -> TemplateTarget {
@@ -99,18 +99,18 @@ pub fn button_target(asset_bytes: &[u8], size_pt: (f64, f64), record_scale: f64,
     target.record_width = record_width;
     target.threshold = 0.8;
     target.warn_threshold = 0.6;
-    target.multi = sky_ir::Multi::Highest;
+    target.multi = liverguard_ir::Multi::Highest;
     target
 }
 
 /// A real matcher over the synthetic scene, with the button registered as target "btn".
-pub fn scene_engine(record_scale: f64) -> (sky_vision::MatcherEngine, TemplateTarget, Frame) {
+pub fn scene_engine(record_scale: f64) -> (liverguard_vision::MatcherEngine, TemplateTarget, Frame) {
     let scene = make_scene(record_scale, 600.0, 400.0, BUTTON_CENTER, BUTTON_SIZE, None);
     let asset = crop_asset(&scene.image, BUTTON_CENTER, BUTTON_SIZE, record_scale);
     let target = button_target(&asset, BUTTON_SIZE, record_scale, 600.0);
     let mut store = AssetStore::in_memory();
     store.put_bytes(&target.asset, &asset).unwrap();
-    (sky_vision::MatcherEngine::without_reuse(store), target, scene)
+    (liverguard_vision::MatcherEngine::without_reuse(store), target, scene)
 }
 
 /// Records every injected input against a fixed screen.
@@ -210,7 +210,7 @@ impl FixedResolver {
 }
 
 impl Resolver for FixedResolver {
-    fn resolve(&mut self, _target: &Target, _id: &str, _frame: &Frame, offset: (f64, f64)) -> sky_vision::Result<Option<Hit>> {
+    fn resolve(&mut self, _target: &Target, _id: &str, _frame: &Frame, offset: (f64, f64)) -> liverguard_vision::Result<Option<Hit>> {
         let Some(mut hit) = self.hit.clone() else { return Ok(None) };
         if self.reused {
             hit.reused = true;
@@ -228,7 +228,7 @@ impl Resolver for FixedResolver {
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use sky_ir::{Edge, Flow, IrDoc, Node, NodeKind};
+use liverguard_ir::{Edge, Flow, IrDoc, Node, NodeKind};
 
 /// Per-target visibility, shared with the test so it can flip things mid-run.
 #[derive(Clone, Default)]
@@ -275,7 +275,7 @@ struct ScreenResolver {
 }
 
 impl Resolver for ScreenResolver {
-    fn resolve(&mut self, _target: &Target, id: &str, _frame: &Frame, _offset: (f64, f64)) -> sky_vision::Result<Option<Hit>> {
+    fn resolve(&mut self, _target: &Target, id: &str, _frame: &Frame, _offset: (f64, f64)) -> liverguard_vision::Result<Option<Hit>> {
         let mut state = self.screen.inner.lock().unwrap();
         let calls = {
             let entry = state.calls.entry(id.to_string()).or_insert(0);
@@ -329,7 +329,7 @@ impl GraphBuilder {
         self
     }
 
-    pub fn var(mut self, name: &str, value: sky_ir::VarValue) -> Self {
+    pub fn var(mut self, name: &str, value: liverguard_ir::VarValue) -> Self {
         self.doc.vars.insert(name.into(), value);
         self
     }

@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use opencv::core::{Mat, MatTraitManual, Scalar, CV_8UC4};
 use opencv::imgproc;
-use sky_engine::{Driver, DriverError, DriverResult};
-use sky_ir::{Bounds, Rect};
-use sky_vision::Frame;
+use liverguard_engine::{Driver, DriverError, DriverResult};
+use liverguard_ir::{Bounds, Rect};
+use liverguard_vision::Frame;
 
 use crate::capture::{CaptureError, Capturer, RawImage, Target};
 use crate::window::{self, WindowInfo};

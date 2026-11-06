@@ -10,7 +10,7 @@ use std::ffi::c_void;
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
 use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::geometry::{CGPoint, CGSize};
-use sky_ir::Rect;
+use liverguard_ir::Rect;
 
 type AXUIElementRef = *const c_void;
 type AXError = i32;

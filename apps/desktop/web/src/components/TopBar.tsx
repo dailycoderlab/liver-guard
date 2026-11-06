@@ -22,7 +22,7 @@ export function TopBar() {
   return (
     <header className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-3" data-tauri-drag-region>
       <div className="mr-3 flex items-baseline gap-2" data-tauri-drag-region>
-        <span className="text-[15px] font-semibold tracking-tight">Sky</span>
+        <span className="text-[15px] font-semibold tracking-tight">LiverGuard</span>
         {open && (
           <span className="max-w-64 truncate text-mute">
             {name}

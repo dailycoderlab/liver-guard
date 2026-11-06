@@ -1,6 +1,6 @@
 //! Turning a rectangle drawn on a frame into a template target.
 
-use sky_ir::{AssetBox, TemplateTarget};
+use liverguard_ir::{AssetBox, TemplateTarget};
 
 use crate::assets::AssetStore;
 use crate::frame::{encode, Frame};
@@ -52,7 +52,7 @@ pub fn create_template(frame: &Frame, rect: (i32, i32, i32, i32)) -> Result<NewT
 mod tests {
     use super::*;
     use opencv::core::{Mat, Scalar, CV_8UC3};
-    use sky_ir::Bounds;
+    use liverguard_ir::Bounds;
 
     fn frame(w: i32, h: i32, scale: f64) -> Frame {
         let image = Mat::new_rows_cols_with_default(h, w, CV_8UC3, Scalar::new(40.0, 50.0, 60.0, 0.0)).unwrap();

@@ -1,10 +1,10 @@
 //! Platform smoke test without OpenCV:
-//! `cargo run -p sky-driver-mac --no-default-features --example probe`
+//! `cargo run -p liverguard-driver-mac --no-default-features --example probe`
 
 #[cfg(target_os = "macos")]
 fn main() {
-    use sky_driver_mac::capture::{Capturer, Target};
-    use sky_driver_mac::{permissions, window};
+    use liverguard_driver_mac::capture::{Capturer, Target};
+    use liverguard_driver_mac::{permissions, window};
 
     let state = permissions::current_state();
     println!("permissions: {state:?}");

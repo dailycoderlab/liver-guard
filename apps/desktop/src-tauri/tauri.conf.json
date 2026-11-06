@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Sky",
+  "productName": "LiverGuard",
   "version": "0.2.0",
-  "identifier": "com.sky.desktop",
+  "identifier": "com.sky.liverguard",
   "build": {
     "beforeDevCommand": "pnpm --dir ../web dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Sky",
+        "title": "LiverGuard",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,

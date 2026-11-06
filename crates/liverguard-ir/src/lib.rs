@@ -1,4 +1,4 @@
-//! Sky IR v2: the script graph, match targets and coordinate maths.
+//! LiverGuard IR v2: the script graph, match targets and coordinate maths.
 //!
 //! No OpenCV and no platform code here, so the editor, the engine and every
 //! driver can depend on it.

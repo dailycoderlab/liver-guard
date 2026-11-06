@@ -1,8 +1,8 @@
 //! The only place the desktop app knows which OS it runs on.
 
 use serde::{Deserialize, Serialize};
-use sky_engine::Driver;
-use sky_ir::{Bounds, Rect};
+use liverguard_engine::Driver;
+use liverguard_ir::{Bounds, Rect};
 
 /// What a script drives: the whole display or a single window.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
@@ -36,7 +36,7 @@ pub struct PermissionInfo {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
-    use sky_driver_mac::{permissions, window, MacDriver, SurfaceSelector};
+    use liverguard_driver_mac::{permissions, window, MacDriver, SurfaceSelector};
 
     pub fn make_driver(surface: Surface) -> Box<dyn Driver> {
         let selector = match surface {
@@ -89,7 +89,7 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use sky_driver_win::{capture, window, SurfaceSelector, WinDriver};
+    use liverguard_driver_win::{capture, window, SurfaceSelector, WinDriver};
 
     pub fn make_driver(surface: Surface) -> Box<dyn Driver> {
         let selector = match surface {
@@ -118,7 +118,7 @@ mod imp {
             platform: "windows",
             accessibility: true,
             screen_recording: supported,
-            owner: "Sky".to_string(),
+            owner: "LiverGuard".to_string(),
             problems: if supported {
                 vec![]
             } else {
@@ -136,7 +136,7 @@ mod imp {
 
     /// Coordinates must be physical pixels, so opt out of DPI virtualization.
     pub fn prepare_process() {
-        sky_driver_win::init_dpi_awareness();
+        liverguard_driver_win::init_dpi_awareness();
     }
 }
 
