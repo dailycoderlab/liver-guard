@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: custom commands plus window close handling",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:window:allow-destroy", "core:window:allow-close"]
+}

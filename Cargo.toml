@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/sky-ir",
+  "crates/sky-vision",
+  "crates/sky-engine",
+  "crates/sky-store",
+  "crates/sky-driver-mac",
+  "crates/sky-driver-win",
+  "crates/sky-cli",
+  "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.88"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+rand = "0.9"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+opencv = { version = "0.101", default-features = false, features = ["imgproc", "imgcodecs", "features2d", "calib3d", "flann"] }
+
+sky-ir = { path = "crates/sky-ir" }
+sky-vision = { path = "crates/sky-vision" }
+sky-engine = { path = "crates/sky-engine" }
+sky-store = { path = "crates/sky-store" }
+sky-driver-mac = { path = "crates/sky-driver-mac", default-features = true }
+sky-driver-win = { path = "crates/sky-driver-win", default-features = true }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

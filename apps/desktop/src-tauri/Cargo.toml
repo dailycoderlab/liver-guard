@@ -1,0 +1,33 @@
+[package]
+name = "sky-desktop"
+description = "Sky desktop app: node canvas editor and local runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+default-run = "sky-desktop"
+
+[lib]
+name = "sky_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sky-ir.workspace = true
+sky-vision.workspace = true
+sky-engine.workspace = true
+sky-store.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+opencv.workspace = true
+tauri = { version = "2", features = [] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sky-driver-mac.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+sky-driver-win.workspace = true

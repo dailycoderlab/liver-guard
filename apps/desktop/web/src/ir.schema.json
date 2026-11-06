@@ -1,0 +1,1241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IrDoc",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string",
+      "default": "main"
+    },
+    "flows": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Flow"
+      }
+    },
+    "irVersion": {
+      "type": "integer",
+      "format": "uint32",
+      "default": 2,
+      "minimum": 0
+    },
+    "meta": {
+      "$ref": "#/$defs/Meta"
+    },
+    "targets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Target"
+      },
+      "default": {}
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/VarValue"
+      },
+      "default": {}
+    }
+  },
+  "required": [
+    "meta",
+    "flows"
+  ],
+  "$defs": {
+    "AssetBox": {
+      "type": "object",
+      "properties": {
+        "h": {
+          "type": "number",
+          "format": "double"
+        },
+        "w": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "w",
+        "h"
+      ]
+    },
+    "CallData": {
+      "type": "object",
+      "properties": {
+        "flow": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "flow"
+      ]
+    },
+    "CompareOp": {
+      "type": "string",
+      "enum": [
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "contains",
+        "match"
+      ]
+    },
+    "Condition": {
+      "description": "Branch condition. `visible` / `missing` look at the screen; the rest combine\nthem or read variables.",
+      "oneOf": [
+        {
+          "description": "True when any listed target is on screen.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "visible"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "targets"
+          ]
+        },
+        {
+          "description": "True when the target is not on screen.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "missing"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "var"
+            },
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "$ref": "#/$defs/CompareOp",
+              "default": "eq"
+            },
+            "value": {
+              "$ref": "#/$defs/VarValue"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "cond": {
+              "$ref": "#/$defs/Condition"
+            },
+            "kind": {
+              "type": "string",
+              "const": "not"
+            }
+          },
+          "required": [
+            "kind",
+            "cond"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "conds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Condition"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "all"
+            }
+          },
+          "required": [
+            "kind",
+            "conds"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "conds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Condition"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "any"
+            }
+          },
+          "required": [
+            "kind",
+            "conds"
+          ]
+        }
+      ]
+    },
+    "Edge": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "sourceHandle": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "targetHandle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "sourceHandle",
+        "target"
+      ]
+    },
+    "EmptyData": {
+      "type": "object"
+    },
+    "Flow": {
+      "type": "object",
+      "properties": {
+        "edges": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Edge"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Node"
+          }
+        }
+      }
+    },
+    "IfData": {
+      "type": "object",
+      "properties": {
+        "when": {
+          "$ref": "#/$defs/Condition"
+        }
+      },
+      "required": [
+        "when"
+      ]
+    },
+    "KeyData": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    "LogData": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "default": "info"
+        },
+        "msg": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "LongPressData": {
+      "description": "Random delay and offset shared by the click-like nodes.",
+      "type": "object",
+      "properties": {
+        "delayMs": {
+          "description": "Fixed wait before the input, milliseconds.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "delayRangeMs": {
+          "description": "`[low, high]` random wait added on top of `delay_ms`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "durationMs": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 600,
+          "minimum": 0
+        },
+        "offsetRatio": {
+          "description": "Maximum random offset as a fraction of the matched box (capped at 0.5).",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ]
+    },
+    "LoopData": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        },
+        "maxIterations": {
+          "description": "Safety cap for `while` / `forever`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "default": null,
+          "minimum": 0
+        },
+        "mode": {
+          "$ref": "#/$defs/LoopMode",
+          "default": "count"
+        },
+        "when": {
+          "description": "Required for `while`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "LoopMode": {
+      "type": "string",
+      "enum": [
+        "count",
+        "while",
+        "forever"
+      ]
+    },
+    "Mask": {
+      "type": "string",
+      "enum": [
+        "none",
+        "edges"
+      ]
+    },
+    "Meta": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxDurationMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 1800000,
+          "minimum": 0
+        },
+        "minEngine": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "Multi": {
+      "type": "string",
+      "enum": [
+        "nearest-last",
+        "highest",
+        "center",
+        "nth"
+      ]
+    },
+    "Node": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "description": "Display name; only affects the editor and run logs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxVisits": {
+          "description": "Optional cap on how often the node may run (guards cycles).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pos": {
+          "description": "Editor position; the engine ignores it.",
+          "$ref": "#/$defs/Pos",
+          "default": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/EmptyData"
+            },
+            "type": {
+              "type": "string",
+              "const": "start"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/EmptyData"
+            },
+            "type": {
+              "type": "string",
+              "const": "end"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TapData"
+            },
+            "type": {
+              "type": "string",
+              "const": "tap"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/LongPressData"
+            },
+            "type": {
+              "type": "string",
+              "const": "longPress"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SwipeData"
+            },
+            "type": {
+              "type": "string",
+              "const": "swipe"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/KeyData"
+            },
+            "type": {
+              "type": "string",
+              "const": "key"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TextData"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/LogData"
+            },
+            "type": {
+              "type": "string",
+              "const": "log"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SnapshotData"
+            },
+            "type": {
+              "type": "string",
+              "const": "snapshot"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SleepData"
+            },
+            "type": {
+              "type": "string",
+              "const": "sleep"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WaitForData"
+            },
+            "type": {
+              "type": "string",
+              "const": "waitFor"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WaitGoneData"
+            },
+            "type": {
+              "type": "string",
+              "const": "waitGone"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WaitStableData"
+            },
+            "type": {
+              "type": "string",
+              "const": "waitStable"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/IfData"
+            },
+            "type": {
+              "type": "string",
+              "const": "if"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SwitchData"
+            },
+            "type": {
+              "type": "string",
+              "const": "switch"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/LoopData"
+            },
+            "type": {
+              "type": "string",
+              "const": "loop"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/RetryData"
+            },
+            "type": {
+              "type": "string",
+              "const": "retry"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SetVarData"
+            },
+            "type": {
+              "type": "string",
+              "const": "setVar"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/CallData"
+            },
+            "type": {
+              "type": "string",
+              "const": "call"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        }
+      ],
+      "required": [
+        "id"
+      ]
+    },
+    "PointTarget": {
+      "type": "object",
+      "properties": {
+        "norm": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "zone": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "required": [
+        "norm",
+        "zone"
+      ]
+    },
+    "Pos": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ]
+    },
+    "RetryData": {
+      "type": "object",
+      "properties": {
+        "backoffMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 500,
+          "minimum": 0
+        },
+        "times": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        }
+      }
+    },
+    "ScaleMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "fixed"
+      ]
+    },
+    "ScaleSpec": {
+      "description": "Scale search ladder. The defaults cover \"fixed size UI on a bigger screen\"\n(0.7x) as well as proportional layouts that come out slightly off (1.5x).",
+      "type": "object",
+      "properties": {
+        "max": {
+          "type": "number",
+          "format": "double",
+          "default": 1.5
+        },
+        "min": {
+          "type": "number",
+          "format": "double",
+          "default": 0.7
+        },
+        "mode": {
+          "$ref": "#/$defs/ScaleMode",
+          "default": "auto"
+        },
+        "steps": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 9,
+          "minimum": 0
+        }
+      }
+    },
+    "SetVarData": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/VarValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "SleepData": {
+      "type": "object",
+      "properties": {
+        "ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "ms"
+      ]
+    },
+    "SnapshotData": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "default": "snap"
+        }
+      }
+    },
+    "Strategy": {
+      "type": "string",
+      "enum": [
+        "tpl",
+        "mstpl",
+        "sift"
+      ]
+    },
+    "SwipeData": {
+      "type": "object",
+      "properties": {
+        "durationMs": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 300,
+          "minimum": 0
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "vector": {
+          "description": "Relative drag `[dx, dy]` in fractions of the surface when `to` is absent.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "required": [
+        "from"
+      ]
+    },
+    "SwitchData": {
+      "type": "object",
+      "properties": {
+        "cases": {
+          "description": "Targets checked in order; the first visible one takes its `case:<target>` handle.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "cases"
+      ]
+    },
+    "TapData": {
+      "description": "Random delay and offset shared by the click-like nodes.",
+      "type": "object",
+      "properties": {
+        "delayMs": {
+          "description": "Fixed wait before the input, milliseconds.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "delayRangeMs": {
+          "description": "`[low, high]` random wait added on top of `delay_ms`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "durationMs": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 60,
+          "minimum": 0
+        },
+        "offsetRatio": {
+          "description": "Maximum random offset as a fraction of the matched box (capped at 0.5).",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ]
+    },
+    "Target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "template"
+            }
+          },
+          "$ref": "#/$defs/TemplateTarget",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "point"
+            }
+          },
+          "$ref": "#/$defs/PointTarget",
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "TemplateTarget": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "type": "array",
+          "default": [
+            0.5,
+            0.5
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "asset": {
+          "description": "SHA-256 of the PNG asset in the local asset directory.",
+          "type": "string"
+        },
+        "assetBox": {
+          "$ref": "#/$defs/AssetBox"
+        },
+        "auto": {
+          "type": "boolean",
+          "default": true
+        },
+        "mask": {
+          "$ref": "#/$defs/Mask",
+          "default": "none"
+        },
+        "multi": {
+          "$ref": "#/$defs/Multi",
+          "default": "nearest-last"
+        },
+        "nth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "default": null,
+          "minimum": 0
+        },
+        "recordScale": {
+          "description": "Pixels per logical point of the recording surface.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "recordWidth": {
+          "description": "Logical width of the surface the crop was taken from. This makes one crop\nwork on a differently sized screen; 0 falls back to the runtime width.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "roi": {
+          "description": "Normalized search region `[x, y, w, h]`.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "scale": {
+          "$ref": "#/$defs/ScaleSpec",
+          "default": {
+            "max": 1.5,
+            "min": 0.7,
+            "mode": "auto",
+            "steps": 9
+          }
+        },
+        "strategy": {
+          "type": "array",
+          "default": [
+            "tpl",
+            "mstpl"
+          ],
+          "items": {
+            "$ref": "#/$defs/Strategy"
+          }
+        },
+        "threshold": {
+          "type": "number",
+          "format": "double",
+          "default": 0.82
+        },
+        "verify": {
+          "$ref": "#/$defs/Verify",
+          "default": "rgb"
+        },
+        "warnThreshold": {
+          "type": "number",
+          "format": "double",
+          "default": 0.7
+        }
+      },
+      "required": [
+        "asset",
+        "assetBox",
+        "roi"
+      ]
+    },
+    "TextData": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "VarValue": {
+      "description": "A script variable value.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Verify": {
+      "type": "string",
+      "enum": [
+        "none",
+        "rgb"
+      ]
+    },
+    "WaitForData": {
+      "type": "object",
+      "properties": {
+        "any": {
+          "description": "Proceeds as soon as any of these shows up.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intervalMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 500,
+          "minimum": 0
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 10000,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "any"
+      ]
+    },
+    "WaitGoneData": {
+      "type": "object",
+      "properties": {
+        "intervalMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 500,
+          "minimum": 0
+        },
+        "target": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 10000,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "target"
+      ]
+    },
+    "WaitStableData": {
+      "type": "object",
+      "properties": {
+        "ms": {
+          "description": "How long the screen must stay unchanged.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 400,
+          "minimum": 0
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 5000,
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

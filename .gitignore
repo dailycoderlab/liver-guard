@@ -10,3 +10,9 @@ __pycache__/
 *.egg-info/
 .coverage
 htmlcov/
+.cursor/
+
+# Rust / Tauri
+target/
+apps/desktop/src-tauri/gen/
+*.tsbuildinfo

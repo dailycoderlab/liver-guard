@@ -1,0 +1,1154 @@
+{
+  "frames": {
+    "scene_2x": {
+      "file": "frames/scene_2x.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 600.0,
+        "h": 400.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000000000011110000000000001111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scene_big_window": {
+      "file": "frames/scene_big_window.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 900.0,
+        "h": 600.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000000000011110000000000001111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scene_big_control": {
+      "file": "frames/scene_big_control.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 600.0,
+        "h": 400.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111110000000000111111000000000011111100000000001111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scene_decoy": {
+      "file": "frames/scene_decoy.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 600.0,
+        "h": 400.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011110111100000001111011110000000111101111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scene_grayscale": {
+      "file": "frames/scene_grayscale.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 600.0,
+        "h": 400.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000000000011110000000000001111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "scene_empty": {
+      "file": "frames/scene_empty.png",
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 600.0,
+        "h": 400.0,
+        "scale": 2.0
+      },
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "assets": {
+    "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc": "assets/24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc.png",
+    "288c8f4842e47c58a30212271c38c03ebc41d113204b305754a218261caa2214": "assets/288c8f4842e47c58a30212271c38c03ebc41d113204b305754a218261caa2214.png"
+  },
+  "cases": [
+    {
+      "name": "lower_density",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          219.375
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "larger_window",
+      "frame": "scene_big_window",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          360.0,
+          286.875,
+          180.0,
+          84.375
+        ],
+        "point": [
+          450.0,
+          329.0625
+        ],
+        "score": 0.9446159601211548,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "multi_scale_bigger_control",
+      "frame": "scene_big_control",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          222.5,
+          183.75,
+          156.25,
+          72.5
+        ],
+        "point": [
+          300.625,
+          220.0
+        ],
+        "score": 0.956324577331543,
+        "strategy": "tpl+mstpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "roi_excludes_decoy",
+      "frame": "scene_decoy",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.4,
+          0.0,
+          0.6,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          219.375
+        ],
+        "score": 0.9505495429039001,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "anchor_offset",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.15,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          258.0,
+          219.375
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "jitter_offset",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        -0.25
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          205.3125
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "decoy_highest_unrestricted",
+      "frame": "scene_decoy",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          60.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          120.0,
+          219.375
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "edge_mask",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "edges",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          192.5,
+          120.0,
+          56.24999999999997
+        ],
+        "point": [
+          300.0,
+          220.625
+        ],
+        "score": 0.7294316291809082,
+        "strategy": "tpl",
+        "warnings": [
+          "below_threshold"
+        ]
+      }
+    },
+    {
+      "name": "tpl_only",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          219.375
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "no_color_verify",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "none",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          219.375
+        ],
+        "score": 0.9505510926246643,
+        "strategy": "tpl",
+        "warnings": []
+      }
+    },
+    {
+      "name": "grayscale_scene",
+      "frame": "scene_grayscale",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": {
+        "box": [
+          240.0,
+          191.25,
+          120.0,
+          56.25
+        ],
+        "point": [
+          300.0,
+          219.375
+        ],
+        "score": 0.8822072744369507,
+        "strategy": "tpl",
+        "warnings": [
+          "color_mismatch:0.43",
+          "color_check_failed"
+        ]
+      }
+    },
+    {
+      "name": "control_absent",
+      "frame": "scene_empty",
+      "target": {
+        "type": "template",
+        "asset": "24e1f44920540947b4524b3bb97804a69b19ba8b610899ffa3da6476b284e5cc",
+        "assetBox": {
+          "w": 360.0,
+          "h": 168.0
+        },
+        "recordScale": 3.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": null
+    },
+    {
+      "name": "flat_template",
+      "frame": "scene_2x",
+      "target": {
+        "type": "template",
+        "asset": "288c8f4842e47c58a30212271c38c03ebc41d113204b305754a218261caa2214",
+        "assetBox": {
+          "w": 60.0,
+          "h": 60.0
+        },
+        "recordScale": 2.0,
+        "recordWidth": 600.0,
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "strategy": [
+          "tpl",
+          "mstpl"
+        ],
+        "scale": {
+          "mode": "auto",
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "threshold": 0.8,
+        "warnThreshold": 0.6,
+        "verify": "rgb",
+        "mask": "none",
+        "multi": "highest",
+        "nth": null,
+        "auto": true
+      },
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "expected": null
+    }
+  ],
+  "point_cases": [
+    {
+      "name": "point_inside",
+      "frame": "scene_2x",
+      "target": {
+        "type": "point",
+        "norm": [
+          0.5,
+          0.55
+        ],
+        "zone": [
+          0.3,
+          0.3,
+          0.4,
+          0.4
+        ]
+      },
+      "expected": {
+        "box": [
+          180.0,
+          120.0,
+          240.0,
+          160.0
+        ],
+        "point": [
+          300.0,
+          220.00000000000003
+        ],
+        "score": 1.0,
+        "strategy": "point",
+        "warnings": [
+          "no_visual_anchor"
+        ]
+      }
+    },
+    {
+      "name": "point_outside",
+      "frame": "scene_2x",
+      "target": {
+        "type": "point",
+        "norm": [
+          0.05,
+          0.05
+        ],
+        "zone": [
+          0.3,
+          0.3,
+          0.4,
+          0.4
+        ]
+      },
+      "expected": null
+    }
+  ],
+  "units": {
+    "similarity": [
+      {
+        "name": "same",
+        "value": 1.0
+      },
+      {
+        "name": "noisy",
+        "value": 0.9870639443397522
+      },
+      {
+        "name": "random",
+        "value": 0.0
+      },
+      {
+        "name": "flat_close",
+        "value": 1.0
+      },
+      {
+        "name": "flat_far",
+        "value": 0.0
+      }
+    ],
+    "scale_ladder": [
+      {
+        "spec": {
+          "min": 0.7,
+          "max": 1.5,
+          "steps": 9
+        },
+        "values": [
+          0.7,
+          0.8,
+          0.9,
+          1.0,
+          1.1,
+          1.2,
+          1.3,
+          1.4,
+          1.5
+        ]
+      },
+      {
+        "spec": {
+          "min": 0.8,
+          "max": 1.25,
+          "steps": 7
+        },
+        "values": [
+          0.8,
+          0.875,
+          0.95,
+          1.025,
+          1.1,
+          1.175,
+          1.25
+        ]
+      },
+      {
+        "spec": {
+          "min": 1.0,
+          "max": 1.0,
+          "steps": 1
+        },
+        "values": [
+          1.0
+        ]
+      },
+      {
+        "spec": {
+          "min": 0.1,
+          "max": 9.0,
+          "steps": 40
+        },
+        "values": [
+          0.2,
+          0.34,
+          0.48,
+          0.62,
+          0.76,
+          0.9,
+          1.04,
+          1.18,
+          1.32,
+          1.46,
+          1.6,
+          1.74,
+          1.88,
+          2.02,
+          2.16,
+          2.3,
+          2.44,
+          2.58,
+          2.72,
+          2.86,
+          3.0
+        ]
+      }
+    ],
+    "template_factor": [
+      {
+        "args": [
+          600.0,
+          3.0,
+          0.0
+        ],
+        "value": 0.26666666666666666
+      },
+      {
+        "args": [
+          0.0,
+          2.0,
+          600.0
+        ],
+        "value": 0.4
+      },
+      {
+        "args": [
+          900.0,
+          2.0,
+          0.0
+        ],
+        "value": 0.26666666666666666
+      },
+      {
+        "args": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "value": 1.0
+      }
+    ],
+    "roi_to_pixels": [
+      {
+        "roi": [
+          0.4,
+          0.0,
+          0.6,
+          1.0
+        ],
+        "size": [
+          480,
+          320
+        ],
+        "value": [
+          192,
+          0,
+          288,
+          320
+        ]
+      },
+      {
+        "roi": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "size": [
+          480,
+          320
+        ],
+        "value": [
+          0,
+          0,
+          480,
+          320
+        ]
+      },
+      {
+        "roi": [
+          0.123,
+          0.456,
+          0.2,
+          0.3
+        ],
+        "size": [
+          480,
+          320
+        ],
+        "value": [
+          59,
+          146,
+          96,
+          96
+        ]
+      },
+      {
+        "roi": [
+          0.99,
+          0.99,
+          0.5,
+          0.5
+        ],
+        "size": [
+          480,
+          320
+        ],
+        "value": [
+          475,
+          317,
+          5,
+          3
+        ]
+      }
+    ],
+    "infer_roi": [
+      {
+        "box": [
+          250.0,
+          190.0,
+          120.0,
+          56.0
+        ],
+        "bounds": [
+          0,
+          0,
+          600,
+          400
+        ],
+        "value": [
+          0.0,
+          0.18,
+          1.0,
+          0.64
+        ]
+      },
+      {
+        "box": [
+          0.0,
+          0.0,
+          40.0,
+          30.0
+        ],
+        "bounds": [
+          0,
+          0,
+          600,
+          400
+        ],
+        "value": [
+          0.0,
+          0.0,
+          0.6867,
+          0.42
+        ]
+      }
+    ],
+    "anchor_in_box": [
+      {
+        "click": [
+          260.0,
+          200.0
+        ],
+        "box": [
+          250.0,
+          190.0,
+          120.0,
+          56.0
+        ],
+        "value": [
+          0.1,
+          0.17857142857142858
+        ]
+      }
+    ]
+  }
+}

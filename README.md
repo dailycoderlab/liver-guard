@@ -1,94 +1,104 @@
 # Sky
 
-Sky 是一个使用 OpenCV 的纯本地桌面脚本录制和执行工具。录制、屏幕预览、模板选择、脚本编辑和运行全部在本机完成；脚本、模板素材和运行记录都保存在本机用户目录，不需要账号，也不联网。
+Sky 是纯本地的桌面脚本编辑与执行工具：脚本以**节点画布**编辑（拖拽、连线、条件分支、循环、重试），用 OpenCV 在本机截图并匹配模板后执行点击、拖动和输入。脚本、模板素材和运行记录都存在本机，不需要账号，也不联网。
+
+技术栈：Tauri 2 + React / React Flow（界面）+ Rust 核心（脚本模型、匹配、解释器、平台驱动）。macOS 和 Windows 共用同一套核心代码。架构见 [DESIGN.md](DESIGN.md)。
 
 ## 目录
 
-- `src/skycore/`：跨平台匹配、脚本解释器、控件检测和本地存储逻辑。
-- `src/skygui/`：基于 PySide6 的桌面窗口。
-- `src/skymac/`、`src/skywin/`：系统相关的窗口、截图和输入驱动。
-- `tests/`：pytest 测试，使用模拟对象，无需真实屏幕。
+| 路径 | 作用 |
+| --- | --- |
+| `crates/sky-ir` | 脚本 IR v2：节点、连线、目标、校验；同时导出 JSON Schema |
+| `crates/sky-vision` | OpenCV 模板匹配、多尺度、控件候选检测、模板裁剪 |
+| `crates/sky-engine` | `Driver` 抽象与图解释器（循环、重试、分支、停滞与超时保护） |
+| `crates/sky-store` | 本地脚本、素材、运行记录（原子写入） |
+| `crates/sky-driver-mac` | macOS：ScreenCaptureKit 截图、CGEvent 输入、权限、窗口枚举 |
+| `crates/sky-driver-win` | Windows：Windows Graphics Capture、SendInput、窗口枚举 |
+| `crates/sky-cli` | 命令行 `sky`：`doctor` / `windows` / `capture` / `probe` / `run` |
+| `apps/desktop/src-tauri` | Tauri 外壳，只负责把核心能力暴露成命令 |
+| `apps/desktop/web` | 画布编辑器（React 19、`@xyflow/react`、Zustand、Tailwind 4） |
 
 ## 本地开发
 
-需要 Python 3.11 或更高版本及 [uv](https://docs.astral.sh/uv/)。macOS 和 Windows 分别在本机安装依赖：
+需要：Rust 1.88+、Node 20+、pnpm、OpenCV 4.x 和 libclang（`opencv` crate 的绑定生成需要）。
 
 ```sh
-uv sync --group dev
-uv run sky-gui
+# 前端依赖与类型
+cd apps/desktop/web
+pnpm install
+pnpm gen:types        # 由 Rust 的 JSON Schema 生成 src/ir/generated.ts
+pnpm test             # 画布状态与图操作测试
+pnpm build            # 类型检查并构建
+
+# 桌面应用（在 apps/desktop 下运行，Tauri CLI 来自 web 的 devDependencies）
+cd ..
+./web/node_modules/.bin/tauri dev
 ```
 
-点击“选择窗口”，从当前可见窗口列表中选择目标；打开新窗口后可点击“刷新列表”。列表不包含最小化窗口或 Sky 自身。选定目标窗口后，实时画面区域会自动调整成目标窗口的宽高比，竖屏或超宽窗口都不会留下黑边。在脚本列表单击打开脚本；右键菜单提供新建、重命名、删除和刷新，右键空白处同样可以新建。打开脚本默认是只读的，点「脚本步骤」标题右侧的「开始编辑」才进入编辑模式，此时点击实时画面才会录制并追加步骤；结束编辑、切换脚本或新建脚本都会相应退出或进入编辑模式，避免误点改到脚本。
+只改界面时，`pnpm dev` 可以在浏览器里运行：此时使用内置的模拟后端，不会截图或点击。
 
-脚本采用手动保存：录制、改名、调整步骤等改动只保留在内存里，状态栏显示「有未保存的改动」，工具栏的「保存」按钮变为可用，点它才写入本地文件。有未保存改动时切换脚本或关闭窗口会询问保存、放弃还是取消；「运行」会先自动保存，因为它读取的是磁盘内容。`threshold`（默认 0.82）以下的匹配一律按“未找到目标”处理并中止运行、不注入任何点击，错误信息会给出实际分数与阈值；`probe` 用同样的判定，因此能在真正运行前发现跑不通的脚本。匹配失败时「运行状态」面板会显示被拒的分数和位置，便于判断是模板裁得不准还是界面变了。脚本步骤列表中每一步都带点击区域的缩略图和名称：双击步骤可改名（留空恢复默认名称），Ctrl 双击放大查看素材原图；右键可重命名、上移、下移、删除步骤或保存脚本。步骤名称同时用于运行日志，便于把日志行对应回具体步骤。
+### OpenCV 构建环境
 
-点击类步骤（`tap` / `longPress`）可以加入随机化，避免每次都精确点在同一像素、间隔完全一致：
-
-- 右键步骤选「随机延迟与偏移…」，可设置固定延迟、随机延迟区间，以及相对识别区域宽高的最大随机偏移比例。
-- 运行时每次点击都会在「运行状态」面板打印实际坐标、相对锚点的偏移量、实际等待时间和匹配分数，例如：
-
-```
-[16:35:02] 点击 点击购买 → (412.37, 308.91) 偏移 (+12.4, +8.9) 等待 187ms 匹配 0.943
-```
-
-- 偏移会被夹回识别区域内，所以即使比例设得很大也不会点到控件外面；超过 0.5 会被收窄并给出提示。
-
-运行时可用“停止”按钮或系统托盘请求停止。关闭窗口时，如果系统托盘可用，程序继续在后台运行。
-
-本地数据位于 `~/.sky/`：
-
-- `scripts/`：脚本内容，一个脚本一个 JSON 文件，没有草稿/版本之分。
-- `assets/`：模板素材，按 SHA-256 命名的无损 PNG。
-- `runs/`：运行记录，包含汇总指标和 JSONL 日志。
-
-macOS 首次启动时 Sky 会先检查屏幕录制和辅助功能权限，缺失时只显示权限引导窗口，点“申请授权”会依次弹出系统授权弹窗并打开对应设置面板；两项都授权后需要重新启动（屏幕录制权限只对新进程生效），未满足权限不会进入主界面。macOS 未授予屏幕录制权限时，窗口标题可能显示为“无标题”。macOS 预览单独捕获选中窗口，即使被其他窗口遮挡也不会将遮挡窗口混入画面。Windows 窗口捕获目前使用屏幕区域截图：目标被遮挡时可能捕获到其他窗口；受保护内容、最小化窗口、权限级别不同的程序可能无法正常捕获或注入。开始运行前应确认目标窗口可见、截图正确。请勿在存在反作弊或禁止自动化条款的应用中使用。
-
-### macOS 权限归属
-
-macOS 把屏幕录制和辅助功能权限记在**负责进程**上，而不是记在脚本或解释器上。用 `uv run sky-gui` 或 `python -m skygui` 启动时，venv 里的 python 没有 app bundle，系统设置的应用列表里不会出现 “Sky” 或 “sky-gui”——权限实际记在启动它的那个应用上（终端 Terminal / iTerm、Cursor 等 IDE）。此时应在系统设置里勾选这个宿主应用，然后完全退出它再重新启动。
-
-`uv run sky doctor` 会打印当前的归属应用：
-
-```
-权限
-  辅助功能    MISSING
-  屏幕录制    MISSING
-  归属应用    Terminal（/Applications/Utilities/Terminal.app）
-              开发态运行：Sky 没有独立的应用条目，权限记在上面这个宿主应用上；
-              若要在系统设置里单独看到 Sky，请运行打包后的 Sky.app。
-```
-
-希望 Sky 在系统设置里有独立条目时，运行 `uv run pyinstaller --noconfirm Sky.spec` 并启动 `dist/Sky.app`：它有 `com.sky.desktop` 标识，会以 “Sky” 出现在列表中。注意从 `open` 之外的方式（如直接执行 `dist/Sky.app/Contents/MacOS/Sky`）启动拿不到 bundle 身份，权限仍会记到宿主应用上。
+Rust 的 `opencv` crate 在编译期需要找到 OpenCV 头文件和 libclang。本项目开发机用的是自行编译的最小静态 OpenCV 4.12（只含 `core`、`imgproc`、`imgcodecs`、`features2d`、`calib3d`、`flann`），通过 `OpenCV_DIR`、`CMAKE_PREFIX_PATH` 指向它；这一步没有脚本化，换机器需要自行准备。`.cargo/config.toml` 已为 macOS 加上 Command Line Tools 的 rpath，避免 `tauri dev` 经 node 启动 cargo 时丢失 `DYLD_*` 变量（SIP）而找不到 `libclang.dylib`。
 
 ## 命令行
 
-`sky` 提供无需 GUI 的本地命令：
-
 ```sh
-uv run sky doctor                  # 检查权限、截图和坐标
-uv run sky windows                 # 列出可控窗口
-uv run sky capture --out shot.png  # 保存一张截图
-uv run sky probe --script <id>     # 只定位模板，不点击
-uv run sky run --script <id>       # 在本机运行脚本当前内容
+cargo run -p sky-cli -- doctor                  # 检查权限、截图和坐标
+cargo run -p sky-cli -- windows                 # 列出可控窗口
+cargo run -p sky-cli -- capture --out shot.png  # 保存一张截图
+cargo run -p sky-cli -- probe --script <id>     # 只定位模板，不点击
+cargo run -p sky-cli -- run   --script <id>     # 运行脚本
 ```
 
-`run` 和 `probe` 也可以用 `--file` 直接指定 IR JSON 文件。
+`run` / `probe` 也可以用 `--file` 指定 IR JSON，用 `--window <名称或 #编号>` 限定到单个窗口。
+
+## 使用说明
+
+- 左侧「脚本 / 节点 / 目标」：新建与切换脚本、把节点拖进画布、管理模板目标。
+- 画布：从节点右侧的输出口拖线到另一个节点；每个输出口只能连一条线，允许成环（循环用 `loop` / `retry` 节点或显式回连，由 `maxVisits` 与整体超时兜底）。
+- 右侧「画面」：开始实时预览 → 截取画面（冻结）→ 单击让引擎自动圈出控件，或拖动框选 → 创建模板目标，并自动绑定到当前选中的节点。
+- 底部：运行日志、校验问题、探测结果。运行时节点按状态高亮，失败节点标红。
+- 「探测」只截一帧并定位所有目标，不点击；`threshold`（默认 0.82）以下的匹配一律按未找到处理，`tap` 等动作不会点出去。
+- 快捷键：⌘S 保存，⌘Z / ⇧⌘Z 撤销与重做，⌘Enter 运行。
+
+### 本地数据
+
+默认在 `~/.sky/`，设置环境变量 `SKY_HOME` 可改到别处：
+
+- `scripts/`：一个脚本一个 JSON 文件（IR v2）。
+- `assets/`：模板素材，按 SHA-256 命名的无损 PNG。
+- `runs/`：运行记录，含汇总指标与 JSONL 日志。
+
+**不兼容旧版本。** 本版直接覆盖旧的 Python 实现，不做迁移：旧的 IR v1 脚本无法解析，列表里不会出现它们（文件原样留在磁盘上，不会被删除）。
+
+### 权限
+
+- macOS 需要「屏幕录制」和「辅助功能」。权限记在**负责进程**上：打包后的 `Sky.app`（标识 `com.sky.desktop`）会作为 “Sky” 出现在系统设置里；用 `tauri dev` 或直接运行二进制时，权限记在启动它的终端或 IDE 上。授予屏幕录制后需要完全退出并重启程序才生效。应用启动后若缺权限，界面会显示权限引导。
+- Windows 使用 Windows Graphics Capture（Windows 10 1803+）。目标程序以管理员身份运行时，Sky 也需要以管理员身份运行，否则输入会被系统拒绝。
+- 请勿在存在反作弊或禁止自动化条款的应用中使用。
 
 ## 测试
 
 ```sh
-uv run pytest -q
+cargo test --workspace     # Rust：IR、匹配、解释器、存储
+cd apps/desktop/web && pnpm test
 ```
 
-客户端还需要在真实 macOS 和 Windows 桌面上手动验证屏幕捕获、窗口激活、输入权限及多显示器缩放。自动化测试使用模拟对象，不能替代真机验证。
+`crates/sky-vision/tests/golden/` 里是匹配对拍夹具：它由已删除的 Python 实现（OpenCV 5.0.0）生成，当前 Rust（OpenCV 4.12）要在得分 ±0.01、点击点 ±1 个逻辑点内复现。夹具现在是冻结的，没有再生成脚本。
 
-## 桌面应用打包
+自动化测试使用模拟驱动，不能替代真机验证：截图、输入、窗口焦点和权限需要在真实的 macOS 与 Windows 桌面上分别检查。
 
-分别在目标操作系统执行（不能在 macOS 上直接生成 Windows 程序）：
+## 打包
+
+在目标系统上分别执行（不能在 macOS 上生成 Windows 安装包）：
 
 ```sh
-uv sync --group dev
-uv run pyinstaller --noconfirm Sky.spec
+cd apps/desktop
+./web/node_modules/.bin/tauri build --bundles app    # macOS，产物在 target/release/bundle/macos/Sky.app
 ```
 
-产物位于 `dist/`。macOS 发布时需配置应用签名、公证和系统权限；Windows 对外分发建议使用代码签名。打包行为和体积需在实际目标机器验证。
+当前产物是 ad-hoc 签名，未公证；对外分发前还需要：
+
+- macOS：Developer ID 签名、`notarytool` 公证、装订（`stapler`）。`src-tauri/entitlements.plist` 已按 hardened runtime 准备，不需要额外 entitlement。设置 `APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 后 `tauri build` 会自动签名并公证。
+- Windows：代码签名证书（`bundle.windows.certificateThumbprint`）；WebView2 运行时在 Windows 11 自带，Windows 10 需要随安装包引导安装。

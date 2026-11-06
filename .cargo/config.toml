@@ -1,0 +1,13 @@
+# ScreenCaptureKit is macOS 14+, and its Swift bridge only links against the
+# runtime when the deployment target is at least 12 (Rust defaults to 11).
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "14.0", force = false }
+
+# The Swift runtime lives in the OS; binaries find it through this rpath.
+# The Command Line Tools rpath lets opencv's build script find libclang even
+# when a parent process (node, a Tauri CLI) stripped DYLD_* variables (SIP).
+[target.'cfg(target_os = "macos")']
+rustflags = [
+  "-C", "link-arg=-Wl,-rpath,/usr/lib/swift",
+  "-C", "link-arg=-Wl,-rpath,/Library/Developer/CommandLineTools/usr/lib",
+]
