@@ -1,8 +1,9 @@
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { useEditor } from '@/store/editor';
 import { useUi, type BottomTab } from '@/store/ui';
+import { ContextMenu, type MenuState } from './ContextMenu';
 import { Empty } from './ui';
 
 const LEVEL_COLOR: Record<string, string> = { debug: 'text-mute', info: 'text-ink', warn: 'text-amber-300', warning: 'text-amber-300', error: 'text-red-400' };
@@ -20,14 +21,35 @@ const TIME = new Intl.DateTimeFormat('zh-CN', { hour12: false, hour: '2-digit', 
 function Logs() {
   const logs = useEditor((s) => s.logs);
   const result = useEditor((s) => s.lastResult);
+  const clearLogs = useEditor((s) => s.clearLogs);
+  const notify = useUi((s) => s.notify);
   const ref = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+
+  const copy = async () => {
+    const selected = window.getSelection()?.toString() ?? '';
+    const text = selected || logs.map((l) => `${TIME.format(l.ts)} ${l.event} ${payloadText(l.payload)}`.trimEnd()).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      notify(selected ? '已复制选中内容' : '已复制全部日志');
+    } catch {
+      notify('复制失败', 'error');
+    }
+  };
   useEffect(() => {
     const el = ref.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight;
   }, [logs.length]);
   if (logs.length === 0 && !result) return <Empty>运行后日志显示在这里</Empty>;
   return (
-    <div ref={ref} className="h-full overflow-y-auto px-3 py-2 font-mono text-xs leading-5 select-text">
+    <div
+      ref={ref}
+      className="h-full overflow-y-auto px-3 py-2 font-mono text-xs leading-5 select-text"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
       {logs.map((l) => (
         <div key={l.id} className={cn('flex gap-3', LEVEL_COLOR[l.level] ?? 'text-ink')}>
           <span className="shrink-0 text-mute">{TIME.format(l.ts)}</span>
@@ -41,6 +63,16 @@ function Logs() {
           {result.state === 'done' ? '运行完成' : result.state === 'stopped' ? '已停止' : `运行失败：${result.errorMsg ?? result.errorCode ?? '未知错误'}`}
           <span className="text-mute">· {result.stepCount} 步 · {((result.endedAt - result.startedAt) / 1000).toFixed(1)}s</span>
         </div>
+      )}
+      {menu && (
+        <ContextMenu
+          at={menu}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: '复制', onSelect: copy },
+            { label: '清空', danger: true, onSelect: clearLogs },
+          ]}
+        />
       )}
     </div>
   );

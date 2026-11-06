@@ -73,6 +73,7 @@ cd apps/desktop && ./web/node_modules/.bin/tauri build --bundles app
 - 图操作（加点、连线规则、整理）写成纯函数放在 `src/ir/`，并带 `vitest` 测试。
 - 所有后端调用走 `src/api/` 的 `Backend` 接口：新增命令要同时改 `types.ts`、`tauri.ts`、`mock.ts` 和 `src-tauri/src/commands.rs` 里的命令与 `lib.rs` 里的注册。
 - Tauri 命令里凡是截图、匹配、运行的都不能在主线程执行；同步命令会卡住窗口。
+- 生产构建会禁用页面级右键菜单（`src/lib/lockdown.ts`），需要右键操作的地方用 `components/ContextMenu.tsx` 自己画菜单。
 - 样式用 Tailwind 4，组件复用 `src/components/ui.tsx`，不要新写一套按钮和输入框。
 
 ## 真机验证与安全

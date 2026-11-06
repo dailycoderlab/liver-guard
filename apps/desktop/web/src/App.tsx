@@ -7,12 +7,14 @@ import { Inspector } from '@/components/Inspector';
 import { LivePanel } from '@/components/LivePanel';
 import { LogPanel } from '@/components/LogPanel';
 import { Palette } from '@/components/Palette';
+import { Splitter } from '@/components/Splitter';
 import { PermissionGate } from '@/components/PermissionGate';
 import { ScriptsPanel } from '@/components/ScriptsPanel';
 import { TargetsPanel } from '@/components/TargetsPanel';
 import { TopBar } from '@/components/TopBar';
 import { Empty } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { MIN_CENTER_HEIGHT, MIN_CENTER_WIDTH } from '@/lib/layout';
 import { resolveUnsaved, runScript, save } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi, type LeftTab, type RightTab } from '@/store/ui';
@@ -95,6 +97,9 @@ export function App() {
   const leftTab = useUi((s) => s.leftTab);
   const rightTab = useUi((s) => s.rightTab);
   const bottomOpen = useUi((s) => s.bottomOpen);
+  const leftWidth = useUi((s) => s.leftWidth);
+  const rightWidth = useUi((s) => s.rightWidth);
+  const bottomHeight = useUi((s) => s.bottomHeight);
   const toast = useUi((s) => s.toast);
   const set = useUi((s) => s.set);
   const scriptId = useEditor((s) => s.scriptId);
@@ -106,7 +111,8 @@ export function App() {
       <div className="flex h-full flex-col">
         <TopBar />
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-[248px] shrink-0 flex-col border-r border-line bg-panel">
+          <aside style={{ width: leftWidth, maxWidth: `calc(100vw - ${rightWidth + MIN_CENTER_WIDTH}px)` }} className="relative flex shrink-0 flex-col border-r border-line bg-panel">
+            <Splitter edge="right" size="leftWidth" />
             <Tabs tabs={LEFT_TABS} value={leftTab} onChange={(v) => set({ leftTab: v })} />
             <div className="min-h-0 flex-1">{leftTab === 'scripts' ? <ScriptsPanel /> : leftTab === 'nodes' ? scriptId ? <Palette /> : <Empty>先打开一个脚本</Empty> : <TargetsPanel />}</div>
           </aside>
@@ -128,7 +134,8 @@ export function App() {
               </Empty>
             )}
             {bottomOpen ? (
-              <div className="h-[220px] shrink-0 border-t border-line bg-panel">
+              <div style={{ height: bottomHeight, maxHeight: `calc(100vh - ${MIN_CENTER_HEIGHT + 40}px)` }} className="relative shrink-0 border-t border-line bg-panel">
+                <Splitter edge="top" size="bottomHeight" />
                 <LogPanel />
               </div>
             ) : (
@@ -138,7 +145,8 @@ export function App() {
             )}
           </main>
 
-          <aside className="flex w-[340px] shrink-0 flex-col border-l border-line bg-panel">
+          <aside style={{ width: rightWidth, maxWidth: `calc(100vw - ${leftWidth + MIN_CENTER_WIDTH}px)` }} className="relative flex shrink-0 flex-col border-l border-line bg-panel">
+            <Splitter edge="left" size="rightWidth" />
             <Tabs tabs={RIGHT_TABS} value={rightTab} onChange={(v) => set({ rightTab: v })} />
             <div className="min-h-0 flex-1">
               <div className={cn('h-full', rightTab !== 'inspector' && 'hidden')}>{scriptId ? <Inspector /> : <Empty>先打开一个脚本</Empty>}</div>

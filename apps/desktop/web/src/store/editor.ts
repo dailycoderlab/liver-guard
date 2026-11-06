@@ -107,6 +107,7 @@ export interface EditorState extends DocSlice {
   setRunStatus: (status: RunStatus) => void;
   applyRunMessage: (message: RunMessage) => void;
   clearRuntime: () => void;
+  clearLogs: () => void;
 }
 
 function docSlice(state: DocSlice): DocSlice {
@@ -474,6 +475,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     clearRuntime: () => set({ runtime: {}, lastResult: null }),
+    clearLogs: () => set({ logs: [], lastResult: null }),
   };
 });
 

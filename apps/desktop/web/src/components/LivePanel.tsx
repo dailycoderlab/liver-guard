@@ -18,6 +18,19 @@ function normalize(a: { x: number; y: number }, b: { x: number; y: number }): Re
   return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.abs(a.x - b.x)), h: Math.round(Math.abs(a.y - b.y)) };
 }
 
+/** Eight grips around the selection; fx/fy say which edges a grip moves (0 = low edge, 1 = high edge, 0.5 = neither). */
+const HANDLES = [
+  { id: 'nw', fx: 0, fy: 0, cursor: 'cursor-nwse-resize' },
+  { id: 'n', fx: 0.5, fy: 0, cursor: 'cursor-ns-resize' },
+  { id: 'ne', fx: 1, fy: 0, cursor: 'cursor-nesw-resize' },
+  { id: 'e', fx: 1, fy: 0.5, cursor: 'cursor-ew-resize' },
+  { id: 'se', fx: 1, fy: 1, cursor: 'cursor-nwse-resize' },
+  { id: 's', fx: 0.5, fy: 1, cursor: 'cursor-ns-resize' },
+  { id: 'sw', fx: 0, fy: 1, cursor: 'cursor-nesw-resize' },
+  { id: 'w', fx: 0, fy: 0.5, cursor: 'cursor-ew-resize' },
+] as const;
+type Handle = (typeof HANDLES)[number];
+
 /** Put a freshly made target on the selected node when that slot is empty. */
 function assignToSelected(name: string) {
   const state = useEditor.getState();
@@ -45,10 +58,12 @@ export function LivePanel({ active }: { active: boolean }) {
   const [error, setError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef<null | (() => Promise<void>)>(null);
   const decoding = useRef(false);
   const drag = useRef<{ start: { x: number; y: number }; moved: boolean } | null>(null);
   const lastClick = useRef<{ x: number; y: number } | null>(null);
+  const resize = useRef<{ handle: Handle; orig: Rect } | null>(null);
 
   const refreshWindows = useCallback(async () => {
     const list = await guarded(() => backend.listWindows());
@@ -113,8 +128,35 @@ export function LivePanel({ active }: { active: boolean }) {
   }, [active, windows.length, refreshWindows]);
 
   const toImage = (e: React.PointerEvent) => {
-    const box = e.currentTarget.getBoundingClientRect();
+    const box = (stageRef.current ?? e.currentTarget).getBoundingClientRect();
     return { x: clamp(((e.clientX - box.left) / box.width) * (frame?.w ?? 1), 0, frame?.w ?? 1), y: clamp(((e.clientY - box.top) / box.height) * (frame?.h ?? 1), 0, frame?.h ?? 1) };
+  };
+
+  const onHandleDown = (e: React.PointerEvent, handle: Handle) => {
+    if (!rect) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resize.current = { handle, orig: rect };
+    // A hand-tuned box is no longer one of the engine's candidates.
+    setCandidates([]);
+    lastClick.current = null;
+  };
+  const onHandleMove = (e: React.PointerEvent) => {
+    const r = resize.current;
+    if (!r || !frame) return;
+    const p = toImage(e);
+    let x0 = r.orig.x;
+    let x1 = r.orig.x + r.orig.w;
+    let y0 = r.orig.y;
+    let y1 = r.orig.y + r.orig.h;
+    if (r.handle.fx === 0) x0 = p.x;
+    if (r.handle.fx === 1) x1 = p.x;
+    if (r.handle.fy === 0) y0 = p.y;
+    if (r.handle.fy === 1) y1 = p.y;
+    setRect(normalize({ x: x0, y: y0 }, { x: x1, y: y1 }));
+  };
+  const onHandleUp = () => {
+    resize.current = null;
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -231,6 +273,7 @@ export function LivePanel({ active }: { active: boolean }) {
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div
+          ref={stageRef}
           className={`relative mx-auto w-full overflow-hidden rounded-md border border-line bg-black ${mode === 'frozen' ? 'cursor-crosshair' : ''}`}
           style={{ aspectRatio: frame ? `${frame.w} / ${frame.h}` : '16 / 10' }}
           onPointerDown={onPointerDown}
@@ -238,10 +281,25 @@ export function LivePanel({ active }: { active: boolean }) {
           onPointerUp={onPointerUp}
         >
           <canvas ref={canvasRef} className="block h-full w-full" />
-          {shown && <div className="pointer-events-none absolute border-2 border-accent bg-accent/15" style={shown} />}
+          {shown && (
+            <div className="pointer-events-none absolute border-2 border-red-500 bg-red-500/15" style={shown}>
+              {mode === 'frozen' &&
+                HANDLES.map((h) => (
+                  <div
+                    key={h.id}
+                    className={`pointer-events-auto absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-red-500 ${h.cursor}`}
+                    style={{ left: `${h.fx * 100}%`, top: `${h.fy * 100}%`, touchAction: 'none' }}
+                    onPointerDown={(e) => onHandleDown(e, h)}
+                    onPointerMove={onHandleMove}
+                    onPointerUp={onHandleUp}
+                    onPointerCancel={onHandleUp}
+                  />
+                ))}
+            </div>
+          )}
           {mode === 'idle' && !frame && <div className="absolute inset-0 flex items-center justify-center text-mute">点击「开始预览」</div>}
         </div>
-        {mode === 'frozen' && <p className="mt-2 text-xs text-mute">拖动框选目标；单击让引擎自动圈出，再次单击在候选框之间切换。</p>}
+        {mode === 'frozen' && <p className="mt-2 text-xs text-mute">拖动框选目标；单击让引擎自动圈出，再次单击在候选框之间切换；拖动框上的小方块可以微调范围。</p>}
       </div>
 
       {mode === 'frozen' && (
