@@ -152,7 +152,7 @@ scripts/mac-dev-build.sh setup    # 只创建证书，不打包
 
 ## 持续集成与发布
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-14`）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：没有 Intel Mac、Windows ARM 的包。
+[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-15`，产物最低支持 macOS 14；`macos-14` 镜像已于 2026-11-02 下线）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：**不支持 Intel Mac**（GitHub 的 Intel 镜像只保证到 2027 年 8 月，决定不做）、也没有 Windows ARM 的包。
 
 | 触发 | 结果 |
 | --- | --- |
@@ -167,7 +167,7 @@ node scripts/ci/check-version.mjs v0.2.1   # 本地先自检（版本号一致�
 git tag v0.2.1 && git push origin v0.2.1
 ```
 
-产物：macOS 是 `.dmg`，Windows 是 NSIS 的 `*-setup.exe`。
+产物：macOS 是 `*_aarch64.dmg`，Windows 是 NSIS 的 `*-setup.exe`。
 
 说明与限制：
 

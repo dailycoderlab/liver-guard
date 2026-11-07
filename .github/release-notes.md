@@ -4,6 +4,8 @@
 
 ### macOS（Apple 芯片，macOS 14 及以上）
 
+不支持 Intel Mac。
+
 1. 打开 `.dmg`，把 `LiverGuard` 拖进「应用程序」。
 2. 首次打开被拦截时，在终端执行一次：
 

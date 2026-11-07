@@ -63,8 +63,14 @@ jobs() {
 STAMP="$PREFIX/.liverguard-opencv-stamp"
 STAMP_VALUE="$VERSION $(sha256 "$0")"
 
+# Directory of the OpenCVConfig.cmake that consumers should use as OpenCV_DIR. macOS has one
+# (lib/cmake/opencv4). The Windows install also has a "Windows pack" launcher at the prefix
+# root that picks x64/<vcNN>/staticlib by itself, but it assumes a shared build unless the
+# consumer sets OpenCV_STATIC=ON, and looks for the wrong vcNN if the MSVC version is newer
+# than it knows. The real config sits deeper, so take the longest path and skip the launcher.
 find_config_dir() {
-  find "$PREFIX" -name OpenCVConfig.cmake -print -quit | xargs -I{} dirname {}
+  find "$PREFIX" -name OpenCVConfig.cmake | awk '{ print length($0) " " $0 }' | sort -rn | sed -n 1p \
+    | cut -d' ' -f2- | xargs -I{} dirname {}
 }
 
 emit_env() {
