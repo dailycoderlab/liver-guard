@@ -4,6 +4,7 @@ import type {
   Backend,
   Bounds,
   FramePacket,
+  NotifyConfig,
   PermissionInfo,
   ProbeRow,
   Rect,
@@ -53,6 +54,12 @@ export const tauriBackend: Backend = {
   createScript: (name) => invoke<ScriptRecord>('create_script', { name }),
   saveScript: (id, ir) => invoke<void>('save_script', { id, ir }),
   renameScript: (id, name) => invoke<void>('rename_script', { id, name }),
+  duplicateScript: (id, name) => invoke<ScriptRecord>('duplicate_script', { id, name }),
+  exportScript: (id) => invoke<string | null>('export_script', { id }),
+  importScript: () => invoke<ScriptRecord | null>('import_script'),
+  getNotifyConfig: () => invoke<NotifyConfig>('get_notify_config'),
+  saveNotifyConfig: (config) => invoke<void>('save_notify_config', { config }),
+  sendTestNotification: (config) => invoke<void>('send_test_notification', { config }),
   deleteScript: (id) => invoke<void>('delete_script', { id }),
   validate: (ir: IrDoc) => invoke<Problem[]>('validate_ir', { ir }),
 
@@ -81,16 +88,20 @@ export const tauriBackend: Backend = {
   async snapshot() {
     return parseFrame(toBytes(await invoke<ArrayBuffer>('snapshot')), 'image/png');
   },
+  async loadImage(image) {
+    const bytes = new Uint8Array(await image.arrayBuffer());
+    return parseFrame(toBytes(await invoke<ArrayBuffer>('load_image', bytes)), 'image/png');
+  },
   detectCandidates: (seq, x, y) => invoke<Rect[]>('detect_candidates', { seq, x, y }),
   createTemplate: (seq, rect) => invoke<Target>('create_template', { seq, rect }),
   async assetPng(sha) {
     return new Blob([toBytes(await invoke<ArrayBuffer>('asset_png', { sha }))], { type: 'image/png' });
   },
 
-  async runStart(ir, surface, onMessage) {
+  async runStart(ir, surface, repeat, onMessage) {
     const channel = new Channel<RunMessage>();
     channel.onmessage = onMessage;
-    return invoke<string>('run_start', { ir, surface, onMessage: channel });
+    return invoke<string>('run_start', { ir, surface, repeat, onMessage: channel });
   },
   runStop: () => invoke<void>('run_stop'),
   probe: (ir, surface) => invoke<ProbeRow[]>('probe', { ir, surface }),

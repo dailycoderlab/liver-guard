@@ -1,5 +1,5 @@
 //! Graph interpreter behaviour against a scripted screen. Ports the old Python
-//! runtime / threshold / jitter suites to the node-graph IR.
+//! runtime / threshold / random-point suites to the node-graph IR.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -28,7 +28,7 @@ fn run(ir: &liverguard_ir::IrDoc, screen: &Screen) -> (RunResult, Reporter, Fake
 }
 
 fn tap(target: &str) -> K {
-    K::Tap(TapData { target: target.into(), duration_ms: 60, jitter: Default::default() })
+    K::Tap(TapData { target: target.into(), duration_ms: 60, human: false, spread: 1.0 })
 }
 
 fn log(msg: &str) -> K {
@@ -120,8 +120,8 @@ fn a_match_below_the_threshold_is_not_clicked() {
 
 #[test]
 fn a_score_just_above_the_threshold_is_clicked_without_warning() {
-    // The warn line (0.7) sits below the threshold (0.82), so an accepted match never warns.
-    let screen = Screen::default().show("a", 0.83);
+    // The warn line (0.7) sits below the threshold (0.85), so an accepted match never warns.
+    let screen = Screen::default().show("a", 0.86);
     let ir = GraphBuilder::new(&["a"]).node("t", tap("a")).wire("start", handle::NEXT, "t").build();
     let (result, reporter, _) = run(&ir, &screen);
     assert_eq!(result.state, RunState::Done);
@@ -247,7 +247,6 @@ fn if_conditions_do_not_enforce_the_threshold() {
 #[test]
 fn set_var_and_variable_conditions() {
     let ir = GraphBuilder::new(&[])
-        .var("level", VarValue::Num(1.0))
         .node("set", K::SetVar(SetVarData { name: "level".into(), value: VarValue::Num(7.0) }))
         .node(
             "i",
@@ -375,7 +374,7 @@ fn a_while_loop_exits_when_the_condition_turns_false() {
 }
 
 #[test]
-fn end_inside_a_loop_body_ends_the_flow() {
+fn end_inside_a_loop_body_ends_the_run() {
     let ir = GraphBuilder::new(&[])
         .node("l", K::Loop(LoopData { mode: Default::default(), count: 5, when: None, max_iterations: None }))
         .node("body", log("tick"))
@@ -440,38 +439,6 @@ fn retry_exhaustion_without_a_failed_wire_aborts() {
     assert!(result.error_msg.unwrap().starts_with("retry exhausted"));
 }
 
-// ------------------------------------------------------------------ calls
-
-#[test]
-fn end_inside_a_called_flow_only_returns_to_the_caller() {
-    let ir = GraphBuilder::new(&[])
-        .node("c", K::Call(CallData { flow: "sub".into() }))
-        .node("after", log("after"))
-        .wire("start", handle::NEXT, "c")
-        .wire("c", handle::NEXT, "after")
-        .flow("sub")
-        .node("inner", log("inner"))
-        .node("e", end())
-        .node("never", log("never"))
-        .wire("start", handle::NEXT, "inner")
-        .wire("inner", handle::NEXT, "e")
-        .build();
-    let (result, reporter, _) = run(&ir, &Screen::default());
-    assert_eq!(result.state, RunState::Done);
-    assert_eq!(messages(&reporter), vec!["inner", "after"]);
-}
-
-#[test]
-fn runaway_recursion_is_cut_off() {
-    let ir = GraphBuilder::new(&[])
-        .node("c", K::Call(CallData { flow: "main".into() }))
-        .wire("start", handle::NEXT, "c")
-        .build_unchecked();
-    let (result, _, _) = run(&ir, &Screen::default());
-    assert_eq!(result.state, RunState::Failed);
-    assert_eq!(result.error_code.as_deref(), Some("call_depth"));
-}
-
 // ----------------------------------------------------------------- guards
 
 #[test]
@@ -498,7 +465,7 @@ fn a_stop_request_ends_the_run_as_stopped() {
 #[test]
 fn a_stop_during_a_long_sleep_is_honoured_promptly() {
     let ir = GraphBuilder::new(&[])
-        .node("nap", K::Sleep(SleepData { ms: 60_000 }))
+        .node("nap", K::Sleep(SleepData { min_ms: 60_000, max_ms: 60_000 }))
         .wire("start", handle::NEXT, "nap")
         .build();
     let stop = Arc::new(AtomicBool::new(false));
@@ -515,17 +482,28 @@ fn a_stop_during_a_long_sleep_is_honoured_promptly() {
     assert!(started.elapsed().as_secs() < 5);
 }
 
-#[test]
-fn the_run_deadline_cuts_a_long_sleep() {
+fn slept_ms(min_ms: u64, max_ms: u64) -> u64 {
     let ir = GraphBuilder::new(&[])
-        .max_duration(1_000)
-        .node("nap", K::Sleep(SleepData { ms: 600_000 }))
+        .node("nap", K::Sleep(SleepData { min_ms, max_ms }))
         .wire("start", handle::NEXT, "nap")
         .build();
-    let started = std::time::Instant::now();
-    let (result, _, _) = run(&ir, &Screen::default());
-    assert_eq!(result.error_code.as_deref(), Some("timeout"));
-    assert!(started.elapsed().as_secs() < 10);
+    let (result, reporter, _) = run(&ir, &Screen::default());
+    assert_eq!(result.state, RunState::Done);
+    let line = reporter.lines().iter().find(|l| l.event == "sleep").unwrap();
+    line.payload.as_ref().unwrap()["ms"].as_u64().unwrap()
+}
+
+#[test]
+fn a_sleep_range_picks_whole_milliseconds_inside_it() {
+    let picks: Vec<u64> = (0..40).map(|_| slept_ms(3, 8)).collect();
+    assert!(picks.iter().all(|ms| (3..=8).contains(ms)), "{picks:?}");
+    // 40 draws from 6 values: all landing on one value is (1/6)^39, i.e. the draw is not random.
+    assert!(picks.iter().any(|ms| *ms != picks[0]), "{picks:?}");
+}
+
+#[test]
+fn equal_sleep_bounds_wait_exactly_that_long() {
+    assert_eq!(slept_ms(7, 7), 7);
 }
 
 #[test]
@@ -569,7 +547,7 @@ fn key_text_and_swipe_reach_the_driver() {
     let ir = GraphBuilder::new(&["a"])
         .node("k", K::Key(KeyData { key: "enter".into() }))
         .node("x", K::Text(TextData { text: "hello".into() }))
-        .node("s", K::Swipe(SwipeData { from: "a".into(), to: None, vector: Some([0.0, -0.1]), duration_ms: 300 }))
+        .node("s", K::Swipe(SwipeData { from: "a".into(), to: None, vector: Some([0.0, -0.1]), duration_ms: 300, human: false, spread: 1.0 }))
         .wire("start", handle::NEXT, "k")
         .wire("k", handle::NEXT, "x")
         .wire("x", handle::NEXT, "s")
@@ -582,67 +560,191 @@ fn key_text_and_swipe_reach_the_driver() {
     assert_eq!(driver.swipes, vec![(120.0, 110.0, 120.0, 50.0)]);
 }
 
-fn jittered(offset_ratio: f64) -> liverguard_ir::IrDoc {
+fn click_at(human: bool) -> liverguard_ir::IrDoc {
+    click_with_spread(human, 1.0)
+}
+
+fn click_with_spread(human: bool, spread: f64) -> liverguard_ir::IrDoc {
     GraphBuilder::new(&["a"])
+        .node("t", K::Tap(TapData { target: "a".into(), duration_ms: 60, human, spread }))
+        .wire("start", handle::NEXT, "t")
+        .build_unchecked() // an out-of-range spread is invalid, and one test feeds the engine one anyway
+}
+
+fn swipe_doc(to: Option<&str>, duration_ms: u32, human: bool) -> liverguard_ir::IrDoc {
+    GraphBuilder::new(&["a", "b"])
         .node(
-            "t",
-            K::Tap(TapData {
-                target: "a".into(),
-                duration_ms: 60,
-                jitter: Jitter { delay_ms: 0.0, delay_range_ms: None, offset_ratio },
+            "s",
+            K::Swipe(SwipeData {
+                from: "a".into(),
+                to: to.map(str::to_string),
+                vector: Some([0.0, -0.1]),
+                duration_ms,
+                human,
+                spread: 1.0,
             }),
         )
-        .wire("start", handle::NEXT, "t")
+        .wire("start", handle::NEXT, "s")
         .build()
 }
 
-#[test]
-fn jitter_stays_inside_the_matched_box() {
-    // Match box is x 100..140, y 100..120, anchor (120, 110).
-    for _ in 0..30 {
-        let (result, _, driver) = run(&jittered(0.2), &Screen::default().show("a", 0.95));
-        assert_eq!(result.state, RunState::Done);
-        let (x, y, _) = driver.taps[0];
-        assert!((120.0 - 0.2 * 40.0 - 1e-9..=120.0 + 0.2 * 40.0 + 1e-9).contains(&x), "x={x}");
-        assert!((110.0 - 0.2 * 20.0 - 1e-9..=110.0 + 0.2 * 20.0 + 1e-9).contains(&y), "y={y}");
-    }
-}
+use liverguard_engine::PointerAction as P;
 
 #[test]
-fn an_oversized_offset_ratio_is_capped_and_reported() {
-    let (_, reporter, driver) = run(&jittered(5.0), &Screen::default().show("a", 0.95));
-    let (x, y, _) = driver.taps[0];
-    assert!((100.0..=140.0).contains(&x) && (100.0..=120.0).contains(&y));
-    assert!(has_event(&reporter, "offset_clamped"));
-}
-
-#[test]
-fn zero_jitter_taps_exactly_on_the_anchor() {
+fn without_human_the_click_lands_exactly_on_the_anchor_through_tap() {
     for _ in 0..5 {
-        let (_, _, driver) = run(&jittered(0.0), &Screen::default().show("a", 0.95));
+        let (_, _, driver) = run(&click_at(false), &Screen::default().show("a", 0.95));
         assert_eq!(driver.taps[0].0, 120.0);
         assert_eq!(driver.taps[0].1, 110.0);
+        assert!(driver.pointer_events.is_empty() && driver.input_checks.is_empty());
     }
 }
 
 #[test]
-fn a_fixed_delay_is_waited_before_the_tap() {
-    let ir = GraphBuilder::new(&["a"])
-        .node(
-            "t",
-            K::Tap(TapData {
-                target: "a".into(),
-                duration_ms: 60,
-                jitter: Jitter { delay_ms: 150.0, delay_range_ms: Some([0.0, 0.0]), offset_ratio: 0.0 },
-            }),
-        )
-        .wire("start", handle::NEXT, "t")
-        .build();
+fn a_human_click_goes_through_raw_pointer_events_inside_the_matched_box() {
+    // Match box is x 100..140, y 100..120, anchor (120, 110).
+    let mut xs = Vec::new();
+    for _ in 0..8 {
+        let (result, reporter, driver) = run(&click_at(true), &Screen::default().show("a", 0.95));
+        assert_eq!(result.state, RunState::Done);
+        assert!(driver.taps.is_empty(), "human clicks must not use the exact tap");
+
+        let kinds: Vec<P> = driver.pointer_events.iter().map(|e| e.0).collect();
+        assert_eq!(kinds, vec![P::Move, P::Down, P::Up], "unknown pointer start: it just appears");
+        let (_, x, y) = driver.pointer_events[1];
+        assert!((100.0..=140.0).contains(&x) && (100.0..=120.0).contains(&y), "({x}, {y})");
+        assert_eq!((driver.pointer_events[2].1, driver.pointer_events[2].2), (x, y));
+        // The input check saw the pressed points once, before anything was sent.
+        assert_eq!(driver.input_checks, vec![vec![(x, y), (x, y)]]);
+        xs.push(x);
+
+        let tap = reporter.lines().iter().find(|l| l.event == "tap").unwrap().payload.clone().unwrap();
+        assert_eq!(tap["human"], true);
+        let hold = tap["holdMs"].as_f64().unwrap();
+        assert!((36.0..=108.0).contains(&hold), "{hold}");
+        assert_eq!(tap["overshoot"], false);
+    }
+    assert!(xs.iter().any(|x| *x != xs[0]), "{xs:?}");
+}
+
+#[test]
+fn the_spread_setting_widens_or_narrows_where_a_human_click_lands() {
+    // Box is x 100..140 around anchor x = 120; compare the scatter at two settings.
+    let spread_of = |spread: f64| {
+        let xs: Vec<f64> = (0..40)
+            .map(|_| {
+                let (result, _, driver) = run(&click_with_spread(true, spread), &Screen::default().show("a", 0.95));
+                assert_eq!(result.state, RunState::Done);
+                driver.pointer_events[1].1
+            })
+            .collect();
+        let mean = xs.iter().sum::<f64>() / xs.len() as f64;
+        (xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / xs.len() as f64).sqrt()
+    };
+    let (tight, wide) = (spread_of(0.4), spread_of(2.0));
+    assert!(wide > tight * 1.8, "tight {tight}, wide {wide}");
+}
+
+#[test]
+fn the_log_reports_the_spread_and_an_unusable_value_is_pulled_into_range() {
+    let (_, reporter, _) = run(&click_with_spread(true, 1.4), &Screen::default().show("a", 0.95));
+    let tap = reporter.lines().iter().find(|l| l.event == "tap").unwrap().payload.clone().unwrap();
+    assert_eq!(tap["spread"], 1.4);
+
+    // Not reachable through validation, but the engine must not misbehave on a bad value.
+    let (result, reporter, driver) = run(&click_with_spread(true, f64::NAN), &Screen::default().show("a", 0.95));
+    assert_eq!(result.state, RunState::Done);
+    let (_, x, y) = driver.pointer_events[1];
+    assert!((100.0..=140.0).contains(&x) && (100.0..=120.0).contains(&y));
+    let tap = reporter.lines().iter().find(|l| l.event == "tap").unwrap().payload.clone().unwrap();
+    assert_eq!(tap["spread"], 1.0);
+}
+
+#[test]
+fn a_human_click_travels_along_a_curve_from_where_the_pointer_is() {
+    let mut driver = FakeDriver::blank();
+    driver.pointer_at = Some((700.0, 500.0));
+    let (result, _) = run_with(&click_at(true), &Screen::default().show("a", 0.95), &mut driver);
+    assert_eq!(result.state, RunState::Done);
+
+    let events = &driver.pointer_events;
+    assert!(events.len() > 20, "{}", events.len());
+    assert_eq!(events.iter().filter(|e| e.0 == P::Move).count(), events.len() - 2);
+    let (_, x, y) = events[events.len() - 2];
+    let (_, last_move_x, last_move_y) = events[events.len() - 3];
+    assert_eq!((last_move_x, last_move_y), (x, y), "the trip ends exactly on the press point");
+    // It starts near where it was and never teleports: consecutive hops stay short.
+    let (_, first_x, first_y) = events[0];
+    assert!(((first_x - 700.0).powi(2) + (first_y - 500.0).powi(2)).sqrt() < 30.0);
+    for pair in events[..events.len() - 2].windows(2) {
+        let hop = ((pair[1].1 - pair[0].1).powi(2) + (pair[1].2 - pair[0].2).powi(2)).sqrt();
+        assert!(hop < 120.0, "jumped {hop}px");
+    }
+}
+
+#[test]
+fn a_human_swipe_between_targets_drags_from_box_to_box() {
+    let screen = Screen::default().show("a", 0.95).show("b", 0.95);
+    let (result, reporter, driver) = run(&swipe_doc(Some("b"), 200, true), &screen);
+    assert_eq!(result.state, RunState::Done);
+    assert!(driver.swipes.is_empty(), "human swipes must not use the exact swipe");
+
+    let kinds: Vec<P> = driver.pointer_events.iter().map(|e| e.0).collect();
+    assert_eq!(kinds.first(), Some(&P::Move));
+    assert_eq!(kinds.last(), Some(&P::Up));
+    assert_eq!(kinds.iter().filter(|k| **k == P::Down).count(), 1);
+    assert!(kinds.iter().filter(|k| **k == P::Drag).count() > 10);
+    // Every pressed point is covered by the input check.
+    assert_eq!(driver.input_checks.len(), 1);
+    assert_eq!(driver.input_checks[0].len(), kinds.iter().filter(|k| **k != P::Move).count());
+
+    let swipe = reporter.lines().iter().find(|l| l.event == "swipe").unwrap().payload.clone().unwrap();
+    assert_eq!(swipe["human"], true);
+}
+
+#[test]
+fn a_human_swipe_by_vector_jitters_its_end_and_stays_on_the_surface() {
+    let mut ends = Vec::new();
+    for _ in 0..6 {
+        let (result, _, driver) = run(&swipe_doc(None, 120, true), &Screen::default().show("a", 0.95));
+        assert_eq!(result.state, RunState::Done);
+        let (action, x, y) = *driver.pointer_events.last().unwrap();
+        assert_eq!(action, P::Up);
+        assert!((0.0..=800.0).contains(&x) && (0.0..=600.0).contains(&y), "({x}, {y})");
+        // Nominally 60 pt up from the start; 3% of 60 pt is small, so it stays close.
+        assert!(y < 110.0 + 20.0 && y > -20.0, "{y}");
+        ends.push((x, y));
+    }
+    assert!(ends.iter().any(|e| *e != ends[0]), "{ends:?}");
+}
+
+#[test]
+fn a_failure_while_the_button_is_held_still_releases_it() {
+    let mut driver = FakeDriver::blank();
+    driver.fail_pointer_on = Some(P::Drag);
+    let (result, _) = run_with(&swipe_doc(None, 120, true), &Screen::default().show("a", 0.95), &mut driver);
+    assert_ne!(result.state, RunState::Done);
+    let kinds: Vec<P> = driver.pointer_events.iter().map(|e| e.0).collect();
+    assert!(kinds.contains(&P::Down));
+    assert_eq!(kinds.last(), Some(&P::Up), "{kinds:?}");
+}
+
+#[test]
+fn stopping_in_the_middle_of_a_human_drag_releases_the_button() {
+    let stop = Arc::new(AtomicBool::new(false));
+    let trigger = stop.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        trigger.store(true, Ordering::Relaxed);
+    });
+    let mut driver = FakeDriver::blank();
     let started = std::time::Instant::now();
-    let (_, reporter, _) = run(&ir, &Screen::default().show("a", 0.95));
-    assert!(started.elapsed().as_millis() >= 150);
-    let tap_line = reporter.lines().iter().find(|l| l.event == "tap").unwrap();
-    assert_eq!(tap_line.payload.as_ref().unwrap()["delayMs"], 150);
+    let (result, _) = run_stoppable(&swipe_doc(None, 3000, true), &Screen::default().show("a", 0.95), &mut driver, stop);
+    assert_eq!(result.state, RunState::Stopped);
+    assert!(started.elapsed().as_millis() < 1500, "a stop should cut the stroke short");
+    let kinds: Vec<P> = driver.pointer_events.iter().map(|e| e.0).collect();
+    assert!(kinds.contains(&P::Down) && kinds.contains(&P::Drag));
+    assert_eq!(kinds.last(), Some(&P::Up), "the button must not stay down");
 }
 
 // ------------------------------------------------------------------ events
@@ -700,4 +802,369 @@ fn a_node_wired_to_nothing_just_ends_the_run() {
     let ir = GraphBuilder::new(&[]).node("a", log("a")).wire("start", handle::NEXT, "a").build();
     let (result, _, _) = run(&ir, &Screen::default());
     assert_eq!(result.state, RunState::Done);
+}
+
+// ------------------------------------------------------------------ rounds
+
+fn rounds_started(reporter: &Reporter) -> usize {
+    reporter.lines().iter().filter(|line| line.event == "round_start").count()
+}
+
+fn run_rounds(ir: &liverguard_ir::IrDoc, screen: &Screen, rounds: u32) -> (RunResult, Reporter, FakeDriver) {
+    let mut driver = FakeDriver::blank();
+    let mut interpreter = Interpreter::new(ir, &mut driver, screen.resolver(), Reporter::new("t"), Arc::new(AtomicBool::new(false)));
+    interpreter.set_rounds(rounds);
+    let result = interpreter.run();
+    (result, interpreter.into_reporter(), driver)
+}
+
+#[test]
+fn several_rounds_walk_the_graph_that_many_times() {
+    let screen = Screen::default().show("a", 0.95);
+    let ir = GraphBuilder::new(&["a"])
+        .node("t", tap("a"))
+        .node("done", log("tick"))
+        .wire("start", handle::NEXT, "t")
+        .wire("t", handle::NEXT, "done")
+        .build();
+    let (result, reporter, driver) = run_rounds(&ir, &screen, 3);
+
+    assert_eq!(result.state, RunState::Done);
+    assert_eq!(driver.taps.len(), 3);
+    assert_eq!(messages(&reporter), vec!["tick", "tick", "tick"]);
+    assert_eq!(rounds_started(&reporter), 3);
+    assert_eq!(result.step_count, 6);
+}
+
+#[test]
+fn one_round_logs_no_round_markers_and_zero_counts_as_one() {
+    let ir = GraphBuilder::new(&[]).node("a", log("a")).wire("start", handle::NEXT, "a").build();
+    let (_, reporter, _) = run(&ir, &Screen::default());
+    assert_eq!(rounds_started(&reporter), 0);
+
+    let (result, reporter, _) = run_rounds(&ir, &Screen::default(), 0);
+    assert_eq!(result.state, RunState::Done);
+    assert_eq!(messages(&reporter), vec!["a"]);
+}
+
+#[test]
+fn end_finishes_only_the_current_round() {
+    let ir = GraphBuilder::new(&[])
+        .node("a", log("a"))
+        .node("stop", end())
+        .node("never", log("never"))
+        .wire("start", handle::NEXT, "a")
+        .wire("a", handle::NEXT, "stop")
+        .build();
+    let (result, reporter, _) = run_rounds(&ir, &Screen::default(), 2);
+    assert_eq!(result.state, RunState::Done);
+    assert_eq!(messages(&reporter), vec!["a", "a"]);
+}
+
+#[test]
+fn every_round_starts_with_no_variables_and_fresh_visit_counts() {
+    // Variables start unset. Round one sets `level` to 7; if that carried over into round two
+    // the `If` would take the "stale" branch instead of setting it again.
+    let ir = GraphBuilder::new(&[])
+        .node("i", K::If(IfData { when: Condition::Var { name: "level".into(), op: CompareOp::Eq, value: VarValue::Num(7.0) } }))
+        .node("stale", log("stale"))
+        .node("set", K::SetVar(SetVarData { name: "level".into(), value: VarValue::Num(7.0) }))
+        // Allowed once per round: a second round would trip it if visits carried over.
+        .node_with_visits("first", log("first"), 1)
+        .wire("start", handle::NEXT, "i")
+        .wire("i", handle::TRUE, "stale")
+        .wire("i", handle::FALSE, "set")
+        .wire("set", handle::NEXT, "first")
+        .build();
+    let (result, reporter, _) = run_rounds(&ir, &Screen::default(), 2);
+    assert_eq!(result.state, RunState::Done);
+    assert_eq!(messages(&reporter), vec!["first", "first"]);
+}
+
+#[test]
+fn an_unset_variable_is_never_equal_and_never_ordered() {
+    let check = |op: CompareOp| {
+        let ir = GraphBuilder::new(&[])
+            .node("i", K::If(IfData { when: Condition::Var { name: "ghost".into(), op, value: VarValue::Num(0.0) } }))
+            .node("yes", log("yes"))
+            .node("no", log("no"))
+            .wire("start", handle::NEXT, "i")
+            .wire("i", handle::TRUE, "yes")
+            .wire("i", handle::FALSE, "no")
+            .build();
+        let (_, reporter, _) = run(&ir, &Screen::default());
+        messages(&reporter)
+    };
+    assert_eq!(check(CompareOp::Eq), vec!["no"]);
+    assert_eq!(check(CompareOp::Ne), vec!["yes"]);
+    assert_eq!(check(CompareOp::Ge), vec!["no"]);
+    assert_eq!(check(CompareOp::Lt), vec!["no"]);
+}
+
+#[test]
+fn a_failure_in_any_round_aborts_the_remaining_rounds() {
+    // The target disappears after round one, so the second tap has nothing to hit.
+    let screen = Screen::default().show("a", 0.95);
+    let hider = screen.clone();
+    let ir = GraphBuilder::new(&["a"])
+        .node("t", tap("a"))
+        .node("mark", log("after tap"))
+        .wire("start", handle::NEXT, "t")
+        .wire("t", handle::NEXT, "mark")
+        .build();
+    let sink: liverguard_engine::EventSink = Arc::new(move |event| {
+        if let RunEvent::Log { event, .. } = event {
+            if event == "script_log" {
+                hider.hide("a");
+            }
+        }
+    });
+    let mut driver = FakeDriver::blank();
+    let mut reporter = Reporter::new("t");
+    reporter.subscribe(sink);
+    let mut interpreter = Interpreter::new(&ir, &mut driver, screen.resolver(), reporter, Arc::new(AtomicBool::new(false)));
+    interpreter.set_rounds(3);
+    let result = interpreter.run();
+    let reporter = interpreter.into_reporter();
+
+    assert_eq!(result.state, RunState::Failed);
+    assert_eq!(result.error_node.as_deref(), Some("t"));
+    assert_eq!(rounds_started(&reporter), 2);
+    assert_eq!(driver.taps.len(), 1);
+}
+
+#[test]
+fn stopping_between_rounds_stops_the_run() {
+    let ir = GraphBuilder::new(&[]).node("a", log("a")).wire("start", handle::NEXT, "a").build();
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let sink: liverguard_engine::EventSink = Arc::new(move |event| {
+        if let RunEvent::Log { event, .. } = event {
+            if event == "round_start" {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+    });
+    let mut driver = FakeDriver::blank();
+    let mut reporter = Reporter::new("t");
+    reporter.subscribe(sink);
+    let mut interpreter = Interpreter::new(&ir, &mut driver, Screen::default().resolver(), reporter, stop);
+    interpreter.set_rounds(5);
+    let result = interpreter.run();
+    assert_eq!(result.state, RunState::Stopped);
+}
+
+// ------------------------------------------------------------------ alerts
+
+use liverguard_engine::alert::AlertSender;
+use liverguard_notify::{Message, NotifyConfig, NotifyError};
+
+fn alert_config(enabled: bool) -> NotifyConfig {
+    NotifyConfig { enabled, url: "https://example.com/hook".into(), ..Default::default() }
+}
+
+/// A sender that records what it was asked to send (and optionally fails).
+fn recording_sender(fail: bool) -> (AlertSender, Arc<Mutex<Vec<Message>>>) {
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let log = sent.clone();
+    let sender: AlertSender = Arc::new(move |_config, message| {
+        log.lock().unwrap().push(message.clone());
+        if fail {
+            Err(NotifyError::Network("连接失败".into()))
+        } else {
+            Ok(())
+        }
+    });
+    (sender, sent)
+}
+
+fn run_alerting(ir: &liverguard_ir::IrDoc, screen: &Screen, rounds: u32, config: NotifyConfig, sender: AlertSender) -> (RunResult, Reporter) {
+    let mut driver = FakeDriver::blank();
+    let mut interpreter = Interpreter::new(ir, &mut driver, screen.resolver(), Reporter::new("t"), Arc::new(AtomicBool::new(false)));
+    interpreter.set_rounds(rounds);
+    interpreter.set_alert_with(config, sender);
+    let result = interpreter.run();
+    (result, interpreter.into_reporter())
+}
+
+fn failing_tap_graph() -> liverguard_ir::IrDoc {
+    GraphBuilder::new(&["a"]).node("t", tap("a")).wire("start", handle::NEXT, "t").build()
+}
+
+#[test]
+fn an_unhandled_failure_sends_one_alert_naming_the_node_and_reason() {
+    let (sender, sent) = recording_sender(false);
+    let (result, reporter) = run_alerting(&failing_tap_graph(), &Screen::default(), 1, alert_config(true), sender);
+
+    assert_eq!(result.state, RunState::Failed);
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    let text = &sent[0].text;
+    assert!(text.contains("脚本运行失败"), "{text}");
+    assert!(text.contains("脚本：test"), "{text}");
+    assert!(text.contains("节点：「t」（tap）"), "{text}");
+    assert!(text.contains("not_found"), "{text}");
+    assert!(!text.contains("第 1/1 轮"), "{text}");
+    assert_eq!(sent[0].details["errorNode"], "t");
+    assert_eq!(sent[0].details["errorCode"], "not_found");
+    assert!(has_event(&reporter, "alert_sent"));
+}
+
+#[test]
+fn a_failure_the_script_routes_stays_silent() {
+    let screen = Screen::default();
+    let ir = GraphBuilder::new(&["a"])
+        .node("t", tap("a"))
+        .node("recover", log("recovered"))
+        .wire("start", handle::NEXT, "t")
+        .wire("t", handle::FAIL, "recover")
+        .build();
+    let (sender, sent) = recording_sender(false);
+    let (result, _) = run_alerting(&ir, &screen, 1, alert_config(true), sender);
+
+    assert_eq!(result.state, RunState::Done);
+    assert!(sent.lock().unwrap().is_empty());
+}
+
+#[test]
+fn success_a_manual_stop_and_a_disabled_alert_send_nothing() {
+    let ok = GraphBuilder::new(&[]).node("a", log("a")).wire("start", handle::NEXT, "a").build();
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&ok, &Screen::default(), 1, alert_config(true), sender);
+    assert!(sent.lock().unwrap().is_empty());
+
+    // Disabled: the failing run is reported as failed but nobody is told.
+    let (sender, sent) = recording_sender(false);
+    let (result, reporter) = run_alerting(&failing_tap_graph(), &Screen::default(), 1, alert_config(false), sender);
+    assert_eq!(result.state, RunState::Failed);
+    assert!(sent.lock().unwrap().is_empty());
+    assert!(!has_event(&reporter, "alert_sent"));
+
+    // Stopped by the user: not a failure.
+    let stop = Arc::new(AtomicBool::new(true));
+    let (sender, sent) = recording_sender(false);
+    let mut driver = FakeDriver::blank();
+    let mut interpreter = Interpreter::new(&ok, &mut driver, Screen::default().resolver(), Reporter::new("t"), stop);
+    interpreter.set_alert_with(alert_config(true), sender);
+    assert_eq!(interpreter.run().state, RunState::Stopped);
+    assert!(sent.lock().unwrap().is_empty());
+}
+
+fn two_logs() -> liverguard_ir::IrDoc {
+    GraphBuilder::new(&[]).node("a", log("a")).wire("start", handle::NEXT, "a").build()
+}
+
+#[test]
+fn a_loop_that_finishes_every_round_sends_one_done_notice() {
+    let (sender, sent) = recording_sender(false);
+    let (result, reporter) = run_alerting(&two_logs(), &Screen::default(), 3, alert_config(true), sender);
+
+    assert_eq!(result.state, RunState::Done);
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 1, "one notice for the whole loop, not one per round");
+    assert_eq!(sent[0].event, "loop_done");
+    assert!(sent[0].text.contains("循环执行完成"), "{}", sent[0].text);
+    assert!(sent[0].text.contains("脚本：test"), "{}", sent[0].text);
+    assert!(sent[0].text.contains("共 3 轮全部成功"), "{}", sent[0].text);
+    assert_eq!(sent[0].details["rounds"], 3);
+    assert!(has_event(&reporter, "alert_sent"));
+}
+
+#[test]
+fn the_done_notice_can_be_switched_off_and_never_fires_for_a_single_run_or_a_disabled_webhook() {
+    let off = NotifyConfig { on_loop_done: false, ..alert_config(true) };
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&two_logs(), &Screen::default(), 3, off.clone(), sender);
+    assert!(sent.lock().unwrap().is_empty(), "switched off");
+
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&two_logs(), &Screen::default(), 1, alert_config(true), sender);
+    assert!(sent.lock().unwrap().is_empty(), "one round is not a loop");
+
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&two_logs(), &Screen::default(), 3, alert_config(false), sender);
+    assert!(sent.lock().unwrap().is_empty(), "webhook disabled");
+
+    // Switching the done notice off does not silence failures.
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&failing_tap_graph(), &Screen::default(), 3, off, sender);
+    assert_eq!(sent.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_stopped_loop_and_a_failed_loop_do_not_send_the_done_notice() {
+    let stop = Arc::new(AtomicBool::new(true));
+    let (sender, sent) = recording_sender(false);
+    let mut driver = FakeDriver::blank();
+    let ir = two_logs();
+    let mut interpreter = Interpreter::new(&ir, &mut driver, Screen::default().resolver(), Reporter::new("t"), stop);
+    interpreter.set_rounds(3);
+    interpreter.set_alert_with(alert_config(true), sender);
+    assert_eq!(interpreter.run().state, RunState::Stopped);
+    assert!(sent.lock().unwrap().is_empty());
+
+    let (sender, sent) = recording_sender(false);
+    run_alerting(&failing_tap_graph(), &Screen::default(), 3, alert_config(true), sender);
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].event, "run_failed");
+}
+
+#[test]
+fn a_failed_done_notice_is_logged_and_the_loop_still_counts_as_done() {
+    let (sender, _) = recording_sender(true);
+    let (result, reporter) = run_alerting(&two_logs(), &Screen::default(), 2, alert_config(true), sender);
+    assert_eq!(result.state, RunState::Done);
+    assert!(has_event(&reporter, "alert_failed"));
+}
+
+#[test]
+fn a_failure_in_a_later_round_stops_the_loop_and_says_how_far_it_got() {
+    // The target is on screen for round one only; round two cannot tap it.
+    let screen = Screen::default().show("a", 0.95);
+    let hider = screen.clone();
+    let ir = GraphBuilder::new(&["a"])
+        .node("t", tap("a"))
+        .node("mark", log("after tap"))
+        .wire("start", handle::NEXT, "t")
+        .wire("t", handle::NEXT, "mark")
+        .build();
+    let (sender, sent) = recording_sender(false);
+    let sink: liverguard_engine::EventSink = Arc::new(move |event| {
+        if let RunEvent::Log { event, .. } = event {
+            if event == "script_log" {
+                hider.hide("a");
+            }
+        }
+    });
+    let mut driver = FakeDriver::blank();
+    let mut reporter = Reporter::new("t");
+    reporter.subscribe(sink);
+    let mut interpreter = Interpreter::new(&ir, &mut driver, screen.resolver(), reporter, Arc::new(AtomicBool::new(false)));
+    interpreter.set_rounds(3);
+    interpreter.set_alert_with(alert_config(true), sender);
+    let result = interpreter.run();
+    let reporter = interpreter.into_reporter();
+
+    assert_eq!(result.state, RunState::Failed);
+    assert_eq!(rounds_started(&reporter), 2, "round three must not start");
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].text.contains("第 2/3 轮"), "{}", sent[0].text);
+    assert!(sent[0].text.contains("已停止循环，剩余 1 轮不会再执行"), "{}", sent[0].text);
+    assert_eq!(sent[0].details["round"], 2);
+    assert_eq!(sent[0].details["rounds"], 3);
+}
+
+#[test]
+fn a_delivery_failure_is_logged_and_never_changes_the_run_result() {
+    let (sender, sent) = recording_sender(true);
+    let (result, reporter) = run_alerting(&failing_tap_graph(), &Screen::default(), 1, alert_config(true), sender);
+
+    assert_eq!(result.state, RunState::Failed);
+    assert_eq!(result.error_code.as_deref(), Some("not_found"));
+    assert_eq!(sent.lock().unwrap().len(), 1);
+    let line = reporter.lines().iter().find(|l| l.event == "alert_failed").expect("alert_failed is logged");
+    assert!(line.payload.as_ref().unwrap()["message"].as_str().unwrap().contains("连接失败"));
+    assert!(!has_event(&reporter, "alert_sent"));
 }

@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Target } from '@/ir/model';
 import { emptyDoc } from '@/ir/model';
-import { selectFlow, useEditor } from './editor';
+import { useEditor } from './editor';
 
 const template = (asset: string): Target =>
   ({ type: 'template', asset, assetBox: { w: 10, h: 10 }, roi: [0, 0, 1, 1] }) as Target;
 
 const state = () => useEditor.getState();
-const nodes = () => selectFlow(state()).nodes;
-const edges = () => selectFlow(state()).edges;
+const nodes = () => state().flow.nodes;
+const edges = () => state().flow.edges;
 
 beforeEach(() => {
   state().loadScript('s1', 'demo', emptyDoc('demo'));
 });
 
 describe('adding nodes', () => {
-  it('wires a new node after the start node on a fresh flow, then after the previous one', () => {
+  it('wires a new node after the start node on a fresh script, then after the previous one', () => {
     const a = state().addNode('tap');
     const b = state().addNode('sleep');
     expect(edges().map((e) => [e.source, e.sourceHandle, e.target])).toEqual([
@@ -95,29 +95,6 @@ describe('targets', () => {
   });
 });
 
-describe('flows', () => {
-  it('renaming a flow rewrites the calls into it', () => {
-    state().addFlow('sub');
-    state().setActiveFlow('main');
-    const call = state().addNode('call');
-    state().updateNode(call, { params: { flow: 'sub' } });
-    expect(state().renameFlow('sub', 'daily')).toBe('daily');
-    expect(nodes().find((n) => n.id === call)?.data.params.flow).toBe('daily');
-  });
-
-  it('deleting a flow clears calls into it and never removes the entry', () => {
-    state().addFlow('sub');
-    state().setActiveFlow('main');
-    const call = state().addNode('call');
-    state().updateNode(call, { params: { flow: 'sub' } });
-    state().deleteFlow('main');
-    expect(Object.keys(state().flows)).toContain('main');
-    state().deleteFlow('sub');
-    expect(state().flows.sub).toBeUndefined();
-    expect(nodes().find((n) => n.id === call)?.data.params.flow).toBe('');
-  });
-});
-
 describe('serialisation', () => {
   it('round-trips through the wire format', () => {
     const tap = state().addNode('tap');
@@ -131,9 +108,9 @@ describe('serialisation', () => {
 describe('run overlay', () => {
   it('records node states and the final result', () => {
     state().beginRun();
-    state().applyRunMessage({ kind: 'node', flow: 'main', nodeId: 'n1', state: 'running' });
-    state().applyRunMessage({ kind: 'node', flow: 'main', nodeId: 'n1', state: 'ok', score: 0.9 });
-    expect(state().runtime['main/n1']).toEqual({ state: 'ok', score: 0.9 });
+    state().applyRunMessage({ kind: 'node', nodeId: 'n1', state: 'running' });
+    state().applyRunMessage({ kind: 'node', nodeId: 'n1', state: 'ok', score: 0.9 });
+    expect(state().runtime['n1']).toEqual({ state: 'ok', score: 0.9 });
     state().applyRunMessage({ kind: 'done', runId: 'r', result: { state: 'done', stepCount: 1, errorCode: null, errorMsg: null, errorNode: null, startedAt: 0, endedAt: 1 } });
     expect(state().runStatus).toBe('idle');
     expect(state().lastResult?.state).toBe('done');

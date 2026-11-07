@@ -1,9 +1,9 @@
 // Pure graph helpers: IR <-> React Flow conversion and the editing rules.
 // Nothing here touches React, so every rule is unit tested.
 
-import dagre from '@dagrejs/dagre';
 import type { Connection, Edge, Node } from '@xyflow/react';
 import { outputHandles, targetRefs } from './catalog';
+import { nodeBox } from './nodeBox';
 import type { IrDoc, IrEdge, IrFlow, IrNode, NodeType } from './model';
 
 export interface LiverGuardNodeData extends Record<string, unknown> {
@@ -169,25 +169,68 @@ export function renameTargetInParams(value: unknown, from: string, to: string): 
 }
 
 /** Targets no node references. */
-export function unusedTargets(doc: Pick<IrDoc, 'targets' | 'flows'>): string[] {
+export function unusedTargets(doc: Pick<IrDoc, 'targets' | 'flow'>): string[] {
   const used = new Set<string>();
-  for (const flow of Object.values(doc.flows)) {
-    for (const node of flow.nodes) targetRefs(node.type, node.data).forEach((t) => used.add(t));
-  }
+  for (const node of doc.flow.nodes) targetRefs(node.type, node.data).forEach((t) => used.add(t));
   return Object.keys(doc.targets).filter((name) => !used.has(name));
 }
 
-/** Left-to-right layered layout, for the "整理布局" button only. */
-export function autoLayout(flow: FlowState, size = { width: 220, height: 84 }): LiverGuardNode[] {
-  const graph = new dagre.graphlib.Graph();
-  graph.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 90 });
-  graph.setDefaultEdgeLabel(() => ({}));
-  // dagre writes the position into the label object, so every node needs its own.
-  for (const node of flow.nodes) graph.setNode(node.id, { ...size });
-  for (const edge of flow.edges) graph.setEdge(edge.source, edge.target);
-  dagre.layout(graph);
+/**
+ * Left-to-right layered layout, for the "整理" button only.
+ *
+ * ELK's layered algorithm with fixed ports: every output handle is a port at its
+ * real height on the card, so branches leave in handle order and a node with one
+ * successor is placed so the edge is a straight line. Cycles (loops, retries) are
+ * broken depth-first from the start node. Returns the nodes with new positions.
+ */
+export async function autoLayout(flow: FlowState): Promise<LiverGuardNode[]> {
+  const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+  const boxes = new Map(flow.nodes.map((n) => [n.id, nodeBox(n.data.kind, n.data.params)]));
+  const inPort = (id: string) => `${id}#in`;
+  const outPort = (id: string, handle: string) => `${id}#out#${handle}`;
+
+  const graph = {
+    id: 'root',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': 'RIGHT',
+      'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.spacing.nodeNode': '36',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '90',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '30',
+      'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.favorStraightEdges': 'true',
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      'elk.separateConnectedComponents': 'true',
+    },
+    children: flow.nodes.map((node) => {
+      const box = boxes.get(node.id)!;
+      return {
+        id: node.id,
+        width: box.width,
+        height: box.height,
+        layoutOptions: { 'elk.portConstraints': 'FIXED_POS' },
+        ports: [
+          ...(node.data.kind === 'start' ? [] : [{ id: inPort(node.id), x: 0, y: box.inY, width: 0, height: 0, layoutOptions: { 'elk.port.side': 'WEST' } }]),
+          ...box.outs.map((out) => ({ id: outPort(node.id, out.id), x: box.width, y: out.y, width: 0, height: 0, layoutOptions: { 'elk.port.side': 'EAST' } })),
+        ],
+      };
+    }),
+    // Edges into a start node, or from a handle the node no longer has, cannot be drawn: leave them out.
+    edges: flow.edges
+      .filter((e) => {
+        const to = flow.nodes.find((n) => n.id === e.target);
+        const from = boxes.get(e.source);
+        return to && to.data.kind !== 'start' && from?.outs.some((o) => o.id === (e.sourceHandle ?? 'next'));
+      })
+      .map((e) => ({ id: e.id, sources: [outPort(e.source, e.sourceHandle ?? 'next')], targets: [inPort(e.target)] })),
+  };
+
+  const laid = await new ELK().layout(graph);
+  const at = new Map((laid.children ?? []).map((c) => [c.id, c]));
   return flow.nodes.map((node) => {
-    const laid = graph.node(node.id);
-    return laid ? { ...node, position: { x: Math.round(laid.x - size.width / 2), y: Math.round(laid.y - size.height / 2) } } : node;
+    const placed = at.get(node.id);
+    return placed?.x === undefined || placed.y === undefined ? node : { ...node, position: { x: Math.round(placed.x), y: Math.round(placed.y) } };
   });
 }

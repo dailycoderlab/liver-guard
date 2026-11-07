@@ -1,5 +1,7 @@
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { clampTo, isNumberDraft, parseDraft, stepNumber } from '@/lib/number';
 
 type Variant = 'default' | 'primary' | 'ghost' | 'danger';
 
@@ -53,21 +55,66 @@ export function Field({ label, hint, children, className }: { label: string; hin
   );
 }
 
-/** A number input that keeps what is typed and reports only finite values. */
-export function NumberInput({ value, onChange, min, max, step, className }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; className?: string }) {
+/**
+ * A number field that keeps what is typed (so it can be emptied and retyped), reports
+ * only complete numbers, and draws its own steppers: WebKit shows the native ones only
+ * on hover, and not at all in the packaged desktop window.
+ */
+export function NumberInput({ value, onChange, onBlur, min, max, step = 1, className }: { value: number; onChange: (v: number) => void; /** Editing finished (focus left the field). */ onBlur?: () => void; min?: number; max?: number; step?: number; className?: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (Number.isFinite(value) ? String(value) : '');
+
+  const commit = (next: number) => {
+    onChange(clampTo(next, min, max));
+  };
+  const bump = (direction: 1 | -1) => {
+    const next = stepNumber(Number.isFinite(value) ? value : 0, direction, step, min, max);
+    setDraft(null);
+    commit(next);
+  };
+
   return (
-    <Input
-      type="number"
-      className={className}
-      value={Number.isFinite(value) ? value : ''}
-      min={min}
-      max={max}
-      step={step}
-      onChange={(e) => {
-        const next = e.target.valueAsNumber;
-        if (Number.isFinite(next)) onChange(next);
-      }}
-    />
+    <div className="relative">
+      <Input
+        type="text"
+        inputMode="decimal"
+        className={cn('pr-6', className)}
+        value={shown}
+        onChange={(e) => {
+          const text = e.target.value;
+          if (!isNumberDraft(text)) return;
+          setDraft(text);
+          const parsed = parseDraft(text);
+          if (parsed !== null) commit(parsed);
+        }}
+        onBlur={() => {
+          setDraft(null);
+          onBlur?.();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            bump(e.key === 'ArrowUp' ? 1 : -1);
+          }
+        }}
+      />
+      <div className="absolute inset-y-px right-px flex w-5 flex-col overflow-hidden rounded-r-md border-l border-line">
+        {([1, -1] as const).map((direction) => (
+          <button
+            key={direction}
+            type="button"
+            tabIndex={-1}
+            aria-label={direction === 1 ? '增加' : '减少'}
+            // Keep focus (and the draft) in the text field.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => bump(direction)}
+            className="flex flex-1 items-center justify-center text-mute transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+          >
+            {direction === 1 ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

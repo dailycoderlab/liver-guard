@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use opencv::core::{Mat, MatTraitConst, Scalar, CV_8UC4};
 use opencv::imgproc;
-use liverguard_engine::{Driver, DriverError, DriverResult};
+use liverguard_engine::{Driver, DriverError, DriverResult, PointerAction};
 use liverguard_ir::{Bounds, Rect};
 use liverguard_vision::Frame;
 
@@ -148,6 +148,24 @@ impl Driver for WinDriver {
     fn swipe(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, duration_ms: u32) -> DriverResult<()> {
         self.ensure_input_target(&[(x1, y1), (x2, y2)])?;
         input::swipe(x1, y1, x2, y2, duration_ms).map_err(input_error)
+    }
+
+    fn pointer(&mut self, action: PointerAction, x: f64, y: f64) -> DriverResult<()> {
+        match action {
+            // On Windows a drag is a move with the button already held.
+            PointerAction::Move | PointerAction::Drag => input::move_to(x, y),
+            PointerAction::Down => input::mouse_down(x, y),
+            PointerAction::Up => input::mouse_up(x, y),
+        }
+        .map_err(input_error)
+    }
+
+    fn pointer_position(&mut self) -> DriverResult<Option<(f64, f64)>> {
+        Ok(input::cursor_position())
+    }
+
+    fn check_input(&mut self, points: &[(f64, f64)]) -> DriverResult<()> {
+        self.ensure_input_target(points)
     }
 
     fn key(&mut self, name: &str) -> DriverResult<()> {

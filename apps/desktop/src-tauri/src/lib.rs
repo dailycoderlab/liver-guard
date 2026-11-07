@@ -8,6 +8,7 @@ use commands::*;
 pub fn run() {
     platform::prepare_process();
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             list_scripts,
@@ -15,6 +16,12 @@ pub fn run() {
             create_script,
             save_script,
             rename_script,
+            duplicate_script,
+            export_script,
+            import_script,
+            get_notify_config,
+            save_notify_config,
+            send_test_notification,
             delete_script,
             validate_ir,
             list_windows,
@@ -24,6 +31,7 @@ pub fn run() {
             live_start,
             live_stop,
             snapshot,
+            load_image,
             detect_candidates,
             create_template,
             asset_png,

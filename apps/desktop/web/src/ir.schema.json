@@ -3,20 +3,13 @@
   "title": "IrDoc",
   "type": "object",
   "properties": {
-    "entry": {
-      "type": "string",
-      "default": "main"
-    },
-    "flows": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/Flow"
-      }
+    "flow": {
+      "$ref": "#/$defs/Flow"
     },
     "irVersion": {
       "type": "integer",
       "format": "uint32",
-      "default": 2,
+      "default": 3,
       "minimum": 0
     },
     "meta": {
@@ -28,18 +21,11 @@
         "$ref": "#/$defs/Target"
       },
       "default": {}
-    },
-    "vars": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/VarValue"
-      },
-      "default": {}
     }
   },
   "required": [
     "meta",
-    "flows"
+    "flow"
   ],
   "$defs": {
     "AssetBox": {
@@ -57,17 +43,6 @@
       "required": [
         "w",
         "h"
-      ]
-    },
-    "CallData": {
-      "type": "object",
-      "properties": {
-        "flow": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "flow"
       ]
     },
     "CompareOp": {
@@ -290,40 +265,24 @@
       }
     },
     "LongPressData": {
-      "description": "Random delay and offset shared by the click-like nodes.",
       "type": "object",
       "properties": {
-        "delayMs": {
-          "description": "Fixed wait before the input, milliseconds.",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        },
-        "delayRangeMs": {
-          "description": "`[low, high]` random wait added on top of `delay_ms`.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "default": null,
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "durationMs": {
           "type": "integer",
           "format": "uint32",
           "default": 600,
           "minimum": 0
         },
-        "offsetRatio": {
-          "description": "Maximum random offset as a fraction of the matched box (capped at 0.5).",
+        "human": {
+          "description": "Act like a human hand instead of an exact injection: a point scattered around\nthe anchor inside the matched box, a curved mouse trip to it, a hesitation and\na jittered press length. Scripts saved with the old `randomPoint` flag read it\nas this one.",
+          "type": "boolean",
+          "default": false
+        },
+        "spread": {
+          "description": "How widely a human landing point scatters, as a multiple of the standard\nspread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,\nabove 1 wanders further across the box. Only used when `human` is on, and\nkept within `MIN_SPREAD..=MAX_SPREAD`.",
           "type": "number",
           "format": "double",
-          "default": 0.0
+          "default": 1.0
         },
         "target": {
           "type": "string"
@@ -393,12 +352,6 @@
             "string",
             "null"
           ]
-        },
-        "maxDurationMs": {
-          "type": "integer",
-          "format": "uint64",
-          "default": 1800000,
-          "minimum": 0
         },
         "minEngine": {
           "type": [
@@ -742,22 +695,6 @@
             "type",
             "data"
           ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "data": {
-              "$ref": "#/$defs/CallData"
-            },
-            "type": {
-              "type": "string",
-              "const": "call"
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
         }
       ],
       "required": [
@@ -876,15 +813,21 @@
     "SleepData": {
       "type": "object",
       "properties": {
-        "ms": {
+        "maxMs": {
+          "description": "Longest wait, milliseconds. Must not be below `min_ms`.",
           "type": "integer",
           "format": "uint64",
+          "default": 1000,
+          "minimum": 0
+        },
+        "minMs": {
+          "description": "Shortest wait, milliseconds. The run waits a random whole number of\nmilliseconds in `min_ms..=max_ms`; equal bounds make a fixed wait.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 1000,
           "minimum": 0
         }
-      },
-      "required": [
-        "ms"
-      ]
+      }
     },
     "SnapshotData": {
       "type": "object",
@@ -914,6 +857,17 @@
         },
         "from": {
           "type": "string"
+        },
+        "human": {
+          "description": "Act like a human hand: start and end scattered inside their boxes (or the\nvector's end point jittered), a curved mouse trip to the start, and a curved\nstroke over a jittered duration.",
+          "type": "boolean",
+          "default": false
+        },
+        "spread": {
+          "description": "How widely a human landing points (and a vector end's jitter) scatter, as a multiple of the standard\nspread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,\nabove 1 wanders further across the box. Only used when `human` is on, and\nkept within `MIN_SPREAD..=MAX_SPREAD`.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
         },
         "to": {
           "type": [
@@ -957,40 +911,24 @@
       ]
     },
     "TapData": {
-      "description": "Random delay and offset shared by the click-like nodes.",
       "type": "object",
       "properties": {
-        "delayMs": {
-          "description": "Fixed wait before the input, milliseconds.",
-          "type": "number",
-          "format": "double",
-          "default": 0.0
-        },
-        "delayRangeMs": {
-          "description": "`[low, high]` random wait added on top of `delay_ms`.",
-          "type": [
-            "array",
-            "null"
-          ],
-          "default": null,
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "durationMs": {
           "type": "integer",
           "format": "uint32",
           "default": 60,
           "minimum": 0
         },
-        "offsetRatio": {
-          "description": "Maximum random offset as a fraction of the matched box (capped at 0.5).",
+        "human": {
+          "description": "Act like a human hand instead of an exact injection: a point scattered around\nthe anchor inside the matched box, a curved mouse trip to it, a hesitation and\na jittered press length. Scripts saved with the old `randomPoint` flag read it\nas this one.",
+          "type": "boolean",
+          "default": false
+        },
+        "spread": {
+          "description": "How widely a human landing point scatters, as a multiple of the standard\nspread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,\nabove 1 wanders further across the box. Only used when `human` is on, and\nkept within `MIN_SPREAD..=MAX_SPREAD`.",
           "type": "number",
           "format": "double",
-          "default": 0.0
+          "default": 1.0
         },
         "target": {
           "type": "string"
@@ -1118,7 +1056,7 @@
         "threshold": {
           "type": "number",
           "format": "double",
-          "default": 0.82
+          "default": 0.85
         },
         "verify": {
           "$ref": "#/$defs/Verify",

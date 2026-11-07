@@ -3,6 +3,8 @@
 // `catalog.test.ts` pins them.
 
 import type { LucideIcon } from 'lucide-react';
+import { formatSleepRange } from './sleep';
+import { DEFAULT_SPREAD } from './spread';
 import {
   Camera,
   CircleStop,
@@ -11,7 +13,6 @@ import {
   EyeOff,
   Hand,
   Keyboard,
-  Layers,
   MessageSquare,
   MousePointerClick,
   MoveRight,
@@ -55,17 +56,16 @@ export const CATEGORY_LABELS: Record<Category, string> = {
 };
 
 export const NODE_SPECS: Record<NodeType, NodeSpec> = {
-  start: { type: 'start', label: '开始', hint: '流程入口，每个流程恰好一个', category: 'flow', icon: Play, accent: 'bg-emerald-600', defaults: () => ({}) },
-  end: { type: 'end', label: '结束', hint: '结束当前流程；在被调用的流程里只返回调用处', category: 'flow', icon: CircleStop, accent: 'bg-slate-600', defaults: () => ({}) },
-  call: { type: 'call', label: '调用流程', hint: '运行另一个流程后继续', category: 'flow', icon: Layers, accent: 'bg-violet-600', defaults: () => ({ flow: '' }) },
-  tap: { type: 'tap', label: '点击', hint: '找到目标后点击；找不到走「失败」', category: 'action', icon: MousePointerClick, accent: 'bg-sky-600', defaults: () => ({ target: '', durationMs: 60, delayMs: 0, offsetRatio: 0 }) },
-  longPress: { type: 'longPress', label: '长按', hint: '找到目标后按住', category: 'action', icon: Hand, accent: 'bg-sky-600', defaults: () => ({ target: '', durationMs: 600, delayMs: 0, offsetRatio: 0 }) },
-  swipe: { type: 'swipe', label: '滑动', hint: '从一个目标拖到另一个目标，或按比例拖动', category: 'action', icon: MoveRight, accent: 'bg-sky-600', defaults: () => ({ from: '', durationMs: 300, vector: [0, -0.3] }) },
+  start: { type: 'start', label: '开始', hint: '脚本入口，恰好一个', category: 'flow', icon: Play, accent: 'bg-emerald-600', defaults: () => ({}) },
+  end: { type: 'end', label: '结束', hint: '结束脚本运行', category: 'flow', icon: CircleStop, accent: 'bg-slate-600', defaults: () => ({}) },
+  tap: { type: 'tap', label: '点击', hint: '找到目标后点击；找不到走「失败」', category: 'action', icon: MousePointerClick, accent: 'bg-sky-600', defaults: () => ({ target: '', durationMs: 60, human: false, spread: DEFAULT_SPREAD }) },
+  longPress: { type: 'longPress', label: '长按', hint: '找到目标后按住', category: 'action', icon: Hand, accent: 'bg-sky-600', defaults: () => ({ target: '', durationMs: 600, human: false, spread: DEFAULT_SPREAD }) },
+  swipe: { type: 'swipe', label: '滑动', hint: '从一个目标拖到另一个目标，或按比例拖动', category: 'action', icon: MoveRight, accent: 'bg-sky-600', defaults: () => ({ from: '', durationMs: 300, vector: [0, -0.3], human: false, spread: DEFAULT_SPREAD }) },
   key: { type: 'key', label: '按键', hint: 'return / escape / space / f1…', category: 'action', icon: Keyboard, accent: 'bg-sky-600', defaults: () => ({ key: 'return' }) },
   text: { type: 'text', label: '输入文字', hint: '向当前焦点输入', category: 'action', icon: Type, accent: 'bg-sky-600', defaults: () => ({ text: '' }) },
   log: { type: 'log', label: '日志', hint: '写一条运行日志', category: 'action', icon: MessageSquare, accent: 'bg-sky-600', defaults: () => ({ level: 'info', msg: '' }) },
   snapshot: { type: 'snapshot', label: '截图记录', hint: '记录当前画面的指纹', category: 'action', icon: Camera, accent: 'bg-sky-600', defaults: () => ({ label: 'snap' }) },
-  sleep: { type: 'sleep', label: '等待时间', hint: '固定等待若干毫秒', category: 'wait', icon: Clock, accent: 'bg-amber-600', defaults: () => ({ ms: 1000 }) },
+  sleep: { type: 'sleep', label: '等待时间', hint: '在设定的秒数范围内随机等待', category: 'wait', icon: Clock, accent: 'bg-amber-600', defaults: () => ({ minMs: 1000, maxMs: 1000 }) },
   waitFor: { type: 'waitFor', label: '等待出现', hint: '任一目标出现即继续；超时走「超时」', category: 'wait', icon: Eye, accent: 'bg-amber-600', defaults: () => ({ any: [], timeoutMs: 10000, intervalMs: 500 }) },
   waitGone: { type: 'waitGone', label: '等待消失', hint: '目标消失后继续', category: 'wait', icon: EyeOff, accent: 'bg-amber-600', defaults: () => ({ target: '', timeoutMs: 10000, intervalMs: 500 }) },
   waitStable: { type: 'waitStable', label: '等待画面稳定', hint: '画面保持不变一段时间后继续', category: 'wait', icon: Timer, accent: 'bg-amber-600', defaults: () => ({ ms: 400, timeoutMs: 5000 }) },
@@ -168,7 +168,7 @@ export function summarize(type: NodeType, data: Record<string, unknown>): string
     case 'log':
       return String(data.msg ?? '');
     case 'sleep':
-      return `${data.ms ?? 0} ms`;
+      return formatSleepRange(Number(data.minMs ?? 0), Number(data.maxMs ?? 0));
     case 'waitFor':
       return ((data.any as string[]) ?? []).join(' | ') || '未选择目标';
     case 'waitGone':
@@ -189,8 +189,6 @@ export function summarize(type: NodeType, data: Record<string, unknown>): string
       return `最多 ${data.times ?? 3} 次`;
     case 'setVar':
       return `${data.name || '?'} = ${String(data.value)}`;
-    case 'call':
-      return String(data.flow || '未选择流程');
     case 'snapshot':
       return String(data.label ?? '');
     default:

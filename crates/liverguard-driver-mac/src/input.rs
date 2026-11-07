@@ -70,6 +70,26 @@ pub fn move_to(x: f64, y: f64) -> Result<()> {
     post_mouse(CGEventType::MouseMoved, x, y)
 }
 
+pub fn mouse_down(x: f64, y: f64) -> Result<()> {
+    post_mouse(CGEventType::LeftMouseDown, x, y)
+}
+
+pub fn mouse_up(x: f64, y: f64) -> Result<()> {
+    post_mouse(CGEventType::LeftMouseUp, x, y)
+}
+
+/// A move with the left button held (apps distinguish this from a hover).
+pub fn mouse_drag(x: f64, y: f64) -> Result<()> {
+    post_mouse(CGEventType::LeftMouseDragged, x, y)
+}
+
+/// Where the cursor is now, in the same global logical space.
+pub fn cursor_position() -> Result<(f64, f64)> {
+    let event = CGEvent::new(source()?).map_err(|_| InputError::Event)?;
+    let point = event.location();
+    Ok((point.x, point.y))
+}
+
 pub fn tap(x: f64, y: f64, duration_ms: u32) -> Result<()> {
     move_to(x, y)?;
     post_mouse(CGEventType::LeftMouseDown, x, y)?;

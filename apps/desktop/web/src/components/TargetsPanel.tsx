@@ -1,7 +1,8 @@
-import { Crosshair, Pencil, Trash2 } from 'lucide-react';
+import { Crosshair, ImageUp, Pencil, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { targetRefs } from '@/ir/catalog';
 import { cn } from '@/lib/cn';
+import { uploadImage } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi } from '@/store/ui';
 import { confirmDialog, promptDialog } from './Dialogs';
@@ -10,27 +11,28 @@ import { Button, Empty, Field, NumberInput, Select } from './ui';
 
 export function TargetsPanel() {
   const targets = useEditor((s) => s.targets);
-  const flows = useEditor((s) => s.flows);
+  const flow = useEditor((s) => s.flow);
   const scriptId = useEditor((s) => s.scriptId);
   const { renameTarget, deleteTarget, patchTarget } = useEditor.getState();
   const [open, setOpen] = useState<string | null>(null);
 
   const usage = useMemo(() => {
     const count: Record<string, number> = {};
-    for (const flow of Object.values(flows)) {
-      for (const node of flow.nodes) for (const ref of new Set(targetRefs(node.data.kind, node.data.params))) count[ref] = (count[ref] ?? 0) + 1;
-    }
+    for (const node of flow.nodes) for (const ref of new Set(targetRefs(node.data.kind, node.data.params))) count[ref] = (count[ref] ?? 0) + 1;
     return count;
-  }, [flows]);
+  }, [flow]);
 
   if (!scriptId) return <Empty>先打开一个脚本</Empty>;
   const names = Object.keys(targets);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-3">
+      <div className="flex flex-col gap-1.5 p-3">
         <Button className="w-full" onClick={() => useUi.getState().set({ rightTab: 'live' })}>
           <Crosshair size={14} /> 从画面截取新目标
+        </Button>
+        <Button className="w-full" onClick={() => void uploadImage()}>
+          <ImageUp size={14} /> 上传图片并框选
         </Button>
       </div>
       {names.length === 0 ? (
@@ -43,7 +45,7 @@ export function TargetsPanel() {
             return (
               <li key={name} className="mb-1 rounded-md border border-line bg-raised/50">
                 <div className="group flex cursor-pointer items-center gap-2 p-1.5" onClick={() => setOpen(open === name ? null : name)}>
-                  <TargetThumb name={name} className="h-9 w-12" />
+                  <TargetThumb name={name} className="h-9 w-12" zoomable />
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{name}</div>
                     <div className={cn('text-[11px]', used ? 'text-mute' : 'text-amber-400')}>{used ? `被 ${used} 个节点使用` : '未被使用'}</div>
@@ -74,7 +76,7 @@ export function TargetsPanel() {
                 {open === name && target.type === 'template' && (
                   <div className="grid grid-cols-2 gap-2 border-t border-line p-2">
                     <Field label="命中阈值" hint="低于此分不点击">
-                      <NumberInput min={0} max={1} step={0.01} value={target.threshold ?? 0.82} onChange={(threshold) => patchTarget(name, { threshold })} />
+                      <NumberInput min={0} max={1} step={0.01} value={target.threshold ?? 0.85} onChange={(threshold) => patchTarget(name, { threshold })} />
                     </Field>
                     <Field label="告警阈值" hint="低于此分记警告">
                       <NumberInput min={0} max={1} step={0.01} value={target.warnThreshold ?? 0.7} onChange={(warnThreshold) => patchTarget(name, { warnThreshold })} />

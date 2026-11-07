@@ -5,6 +5,7 @@ members = [
   "crates/liverguard-vision",
   "crates/liverguard-engine",
   "crates/liverguard-store",
+  "crates/liverguard-notify",
   "crates/liverguard-driver-mac",
   "crates/liverguard-driver-win",
   "crates/liverguard-cli",
@@ -27,6 +28,7 @@ schemars = "1"
 rand = "0.9"
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 opencv = { version = "0.101", default-features = false, features = ["imgproc", "imgcodecs", "features2d", "calib3d", "flann"] }
 
@@ -34,6 +36,7 @@ liverguard-ir = { path = "crates/liverguard-ir" }
 liverguard-vision = { path = "crates/liverguard-vision" }
 liverguard-engine = { path = "crates/liverguard-engine" }
 liverguard-store = { path = "crates/liverguard-store" }
+liverguard-notify = { path = "crates/liverguard-notify" }
 liverguard-driver-mac = { path = "crates/liverguard-driver-mac", default-features = true }
 liverguard-driver-win = { path = "crates/liverguard-driver-win", default-features = true }
 

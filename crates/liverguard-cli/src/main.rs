@@ -52,6 +52,22 @@ enum Command {
     Probe(RunArgs),
     /// List scripts in the local store
     Scripts,
+    /// Export a script and its template images to one file
+    Export {
+        /// Script id or exact name in the local store
+        #[arg(long)]
+        script: String,
+        /// File to write (default: <name>.liverguard.json in the current directory)
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Send a test message through the configured failure webhook
+    NotifyTest,
+    /// Import an exported script file as a new script
+    Import {
+        /// File written by `export` or by the desktop app
+        file: PathBuf,
+    },
     /// Print the JSON Schema of the script document
     Schema,
 }
@@ -67,6 +83,12 @@ struct RunArgs {
     /// Target window (name, or #number); default is the whole display
     #[arg(long)]
     window: Option<String>,
+    /// Walk the script this many times in one run (default 1); a failure or Ctrl-C ends all rounds
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+    repeat: u32,
+    /// Do not send the failure webhook even if one is configured
+    #[arg(long)]
+    no_notify: bool,
     /// Safety limit for a local run
     #[arg(long)]
     max_seconds: Option<u64>,
@@ -102,6 +124,14 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Capture { out, window } => capture(&out, window.as_deref()),
         Command::Run(args) => run(&store, args, false),
         Command::Probe(args) => run(&store, args, true),
+        Command::Export { script, out } => export(&store, &script, out),
+        Command::NotifyTest => {
+            let config = store.load_settings()?.notify;
+            liverguard_notify::send(&config, &liverguard_notify::test_message()).map_err(|e| anyhow!("{e}"))?;
+            println!("测试通知已发送（接收方：{:?}）", config.channel);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Import { file } => import(&store, &file),
         Command::Scripts => {
             for script in store.list_scripts()? {
                 println!("{}  {}", script.id, script.name);
@@ -150,6 +180,37 @@ fn capture(out: &PathBuf, window: Option<&str>) -> Result<ExitCode> {
     let frame = driver.capture().map_err(|e| anyhow!("{e}"))?;
     std::fs::write(out, frame.to_png().map_err(|e| anyhow!("{e}"))?)?;
     println!("saved {} ({}x{} px)", out.display(), frame.width(), frame.height());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Resolve a script id or exact name to its id.
+fn script_id(store: &LocalStore, wanted: &str) -> Result<String> {
+    if store.get_script(wanted).is_ok() {
+        return Ok(wanted.to_string());
+    }
+    let matches: Vec<_> = store.list_scripts()?.into_iter().filter(|s| s.name == wanted).collect();
+    match matches.as_slice() {
+        [one] => Ok(one.id.clone()),
+        [] => bail!("no script with id or name \"{wanted}\" in {}", store.root().display()),
+        _ => bail!("several scripts are named \"{wanted}\"; use the id"),
+    }
+}
+
+fn export(store: &LocalStore, wanted: &str, out: Option<PathBuf>) -> Result<ExitCode> {
+    let bundle = store.export_script(&script_id(store, wanted)?)?;
+    let path = out.unwrap_or_else(|| {
+        let safe: String = bundle.name.chars().map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c }).collect();
+        PathBuf::from(format!("{}.liverguard.json", safe.trim().trim_matches('.')))
+    });
+    std::fs::write(&path, serde_json::to_vec_pretty(&bundle)?).with_context(|| format!("writing {}", path.display()))?;
+    println!("exported \"{}\" ({} images) to {}", bundle.name, bundle.assets.len(), path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn import(store: &LocalStore, file: &PathBuf) -> Result<ExitCode> {
+    let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let record = store.import_bytes(&bytes)?;
+    println!("{}  {}", record.id, record.name);
     Ok(ExitCode::SUCCESS)
 }
 
@@ -203,9 +264,11 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
         });
     }
 
+    // Failure alerts come from the settings the desktop app saved (same store, same file).
+    let alert = if args.no_notify { None } else { Some(store.load_settings()?.notify).filter(|n| n.enabled) };
     let run_id = uuid::Uuid::new_v4().simple().to_string();
     let sink: EventSink = Arc::new(print_event);
-    let (result, reporter) = liverguard_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, Some(sink)).map_err(|e| anyhow!(e))?;
+    let (result, reporter) = liverguard_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, liverguard_engine::RunOptions { sink: Some(sink), rounds: args.repeat, alert }).map_err(|e| anyhow!(e))?;
 
     let jsonl = reporter.jsonl();
     if let Some(path) = &args.log {

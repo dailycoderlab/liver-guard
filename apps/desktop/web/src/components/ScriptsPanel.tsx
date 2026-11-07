@@ -1,7 +1,7 @@
-import { FilePlus2, Pencil, Trash2 } from 'lucide-react';
+import { Copy, Download, FilePlus2, Pencil, Trash2, Upload } from 'lucide-react';
 import { useEffect } from 'react';
 import { cn } from '@/lib/cn';
-import { createScript, deleteScript, openScript, refreshScripts, renameScript } from '@/store/actions';
+import { createScript, deleteScript, duplicateScript, exportScript, importScript, openScript, refreshScripts, renameScript } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi } from '@/store/ui';
 import { Button, Empty } from './ui';
@@ -13,9 +13,12 @@ export function ScriptsPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-3">
-        <Button className="w-full" variant="primary" onClick={createScript}>
+      <div className="flex gap-1.5 p-3">
+        <Button className="min-w-0 flex-1" variant="primary" onClick={createScript}>
           <FilePlus2 size={14} /> 新建脚本
+        </Button>
+        <Button onClick={importScript} title="从文件导入脚本（含模板图片），作为新脚本添加">
+          <Upload size={14} /> 导入
         </Button>
       </div>
       {scripts.length === 0 ? (
@@ -38,6 +41,26 @@ export function ScriptsPanel() {
                 }}
               >
                 <Pencil size={13} />
+              </button>
+              <button
+                className="hidden text-mute hover:text-ink group-hover:block"
+                title="导出为文件"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void exportScript(s.id);
+                }}
+              >
+                <Download size={13} />
+              </button>
+              <button
+                className="hidden text-mute hover:text-ink group-hover:block"
+                title="复制"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void duplicateScript(s.id, s.name);
+                }}
+              >
+                <Copy size={13} />
               </button>
               <button
                 className="hidden text-mute hover:text-red-400 group-hover:block"

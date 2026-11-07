@@ -1,11 +1,12 @@
 //! Turning a rectangle drawn on a frame into a template target.
 
-use liverguard_ir::{AssetBox, TemplateTarget};
+use liverguard_ir::{AssetBox, Bounds, TemplateTarget};
 
 use crate::assets::AssetStore;
 use crate::frame::{encode, Frame};
 use crate::util::{self, Result, VisionError};
-use opencv::core::Vector;
+use opencv::core::{Mat, MatTraitConst, Vector};
+use opencv::imgcodecs;
 
 /// How far, as a fraction of the surface, the search region extends past the
 /// drawn box. Small enough to avoid look-alikes elsewhere, big enough to
@@ -17,6 +18,25 @@ pub struct NewTemplate {
     /// PNG bytes of the crop; store them under `target.asset`.
     pub png: Vec<u8>,
     pub target: TemplateTarget,
+}
+
+/// Largest side, in pixels, accepted for a user-supplied screenshot.
+pub const MAX_IMAGE_SIDE: i32 = 10_000;
+
+/// Decode a user-supplied screenshot (PNG / JPEG / ...) into BGR pixels and the
+/// bounds that go with it. There is no real surface behind the file, so it is
+/// treated as a 1x capture of the whole surface at its own pixel size: matching
+/// normalises by width, so only the framing (full surface, not a crop) matters.
+pub fn decode_image(bytes: &[u8]) -> Result<(Mat, Bounds)> {
+    let image = imgcodecs::imdecode(&Vector::<u8>::from_slice(bytes), imgcodecs::IMREAD_COLOR)?;
+    if image.empty() {
+        return Err(VisionError::Invalid("the file is not a decodable image".to_string()));
+    }
+    let (w, h) = (image.cols(), image.rows());
+    if w < 8 || h < 8 || w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE {
+        return Err(VisionError::Invalid(format!("image size {w}x{h} is outside 8..{MAX_IMAGE_SIDE} px")));
+    }
+    Ok((image, Bounds { x: 0.0, y: 0.0, w: w as f64, h: h as f64, scale: 1.0 }))
 }
 
 /// Crop `rect` (image pixels: x, y, w, h) out of `frame`.
@@ -51,8 +71,7 @@ pub fn create_template(frame: &Frame, rect: (i32, i32, i32, i32)) -> Result<NewT
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opencv::core::{Mat, Scalar, CV_8UC3};
-    use liverguard_ir::Bounds;
+    use opencv::core::{Scalar, CV_8UC3};
 
     fn frame(w: i32, h: i32, scale: f64) -> Frame {
         let image = Mat::new_rows_cols_with_default(h, w, CV_8UC3, Scalar::new(40.0, 50.0, 60.0, 0.0)).unwrap();
@@ -85,6 +104,23 @@ mod tests {
         let f = frame(400, 300, 1.0);
         let made = create_template(&f, (350, 250, 100, 100)).unwrap();
         assert_eq!((made.target.asset_box.w, made.target.asset_box.h), (50.0, 50.0));
+    }
+
+    #[test]
+    fn decodes_an_uploaded_image_as_a_1x_full_surface() {
+        let png = frame(320, 200, 1.0).to_png().unwrap();
+        let (image, bounds) = decode_image(&png).unwrap();
+        assert_eq!((image.cols(), image.rows()), (320, 200));
+        assert_eq!((bounds.w, bounds.h, bounds.scale), (320.0, 200.0, 1.0));
+        // A template cut from it records the whole image as the surface.
+        let made = create_template(&Frame::new(image, bounds), (40, 40, 80, 40)).unwrap();
+        assert_eq!((made.target.record_scale, made.target.record_width), (1.0, 320.0));
+    }
+
+    #[test]
+    fn rejects_bytes_that_are_not_an_image() {
+        assert!(decode_image(b"definitely not an image").is_err());
+        assert!(decode_image(&[]).is_err());
     }
 
     #[test]

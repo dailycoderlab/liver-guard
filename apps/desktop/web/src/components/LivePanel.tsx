@@ -1,14 +1,13 @@
-import { Camera, Crosshair, Pause, Play, RefreshCw, Scissors } from 'lucide-react';
+import { Camera, Crosshair, ImageUp, Pause, Play, Scissors } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { backend, type FramePacket, type Rect, type Surface } from '@/api';
-import { guarded } from '@/store/actions';
+import { backend, type FramePacket, type Rect } from '@/api';
+import { surfaceLabel, surfaceValue } from '@/lib/surface';
+import { guarded, requireSurface, uploadImage } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi } from '@/store/ui';
-import { Button, Empty, Input, Select } from './ui';
+import { Button, Empty, Input } from './ui';
 
 type Mode = 'idle' | 'live' | 'frozen';
-
-const surfaceValue = (s: Surface) => (s.kind === 'fullScreen' ? 'full' : String(s.number));
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -34,7 +33,7 @@ type Handle = (typeof HANDLES)[number];
 /** Put a freshly made target on the selected node when that slot is empty. */
 function assignToSelected(name: string) {
   const state = useEditor.getState();
-  const node = state.flows[state.activeFlow]?.nodes.find((n) => n.selected);
+  const node = state.flow.nodes.find((n) => n.selected);
   if (!node) return;
   const { kind, params } = node.data;
   if ((kind === 'tap' || kind === 'longPress' || kind === 'waitGone') && !params.target) state.updateNode(node.id, { params: { ...params, target: name } });
@@ -44,18 +43,22 @@ function assignToSelected(name: string) {
 
 export function LivePanel({ active }: { active: boolean }) {
   const surface = useEditor((s) => s.surface);
-  const setSurface = useEditor((s) => s.setSurface);
   const scriptId = useEditor((s) => s.scriptId);
   const windows = useUi((s) => s.windows);
   const notify = useUi((s) => s.notify);
+  const pendingFrame = useUi((s) => s.pendingFrame);
 
   const [mode, setMode] = useState<Mode>('idle');
+  const modeRef = useRef<Mode>('idle');
+  modeRef.current = mode;
   const [frame, setFrame] = useState<{ seq: number; w: number; h: number } | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [candidates, setCandidates] = useState<Rect[]>([]);
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [name, setName] = useState('target');
   const [error, setError] = useState<string | null>(null);
+  /** Where the frozen frame came from: a capture of the surface, or an uploaded file. */
+  const [source, setSource] = useState<'screen' | 'image'>('screen');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -64,11 +67,6 @@ export function LivePanel({ active }: { active: boolean }) {
   const drag = useRef<{ start: { x: number; y: number }; moved: boolean } | null>(null);
   const lastClick = useRef<{ x: number; y: number } | null>(null);
   const resize = useRef<{ handle: Handle; orig: Rect } | null>(null);
-
-  const refreshWindows = useCallback(async () => {
-    const list = await guarded(() => backend.listWindows());
-    if (list) useUi.getState().set({ windows: list });
-  }, []);
 
   const draw = useCallback(async (packet: FramePacket) => {
     const canvas = canvasRef.current;
@@ -97,10 +95,12 @@ export function LivePanel({ active }: { active: boolean }) {
   }, []);
 
   const startLive = useCallback(async () => {
+    const target = await requireSurface();
+    if (!target) return;
     setError(null);
     setRect(null);
     setCandidates([]);
-    const stop = await guarded(() => backend.liveStart(useEditor.getState().surface, (p) => void draw(p), (m) => setError(m)));
+    const stop = await guarded(() => backend.liveStart(target, (p) => void draw(p), (m) => setError(m)));
     if (stop) {
       stopRef.current = stop;
       setMode('live');
@@ -113,8 +113,26 @@ export function LivePanel({ active }: { active: boolean }) {
     if (!packet) return;
     decoding.current = false;
     await draw(packet);
+    setSource('screen');
     setMode('frozen');
   }, [draw, stopLive]);
+
+  // An uploaded screenshot replaces whatever is showing and is boxed like a frozen capture.
+  useEffect(() => {
+    if (!pendingFrame) return;
+    useUi.getState().set({ pendingFrame: null });
+    void (async () => {
+      await stopLive();
+      setError(null);
+      setRect(null);
+      setCandidates([]);
+      lastClick.current = null;
+      decoding.current = false;
+      await draw(pendingFrame);
+      setSource('image');
+      setMode('frozen');
+    })();
+  }, [pendingFrame, draw, stopLive]);
 
   // The preview only runs while this tab is showing.
   useEffect(() => {
@@ -123,9 +141,11 @@ export function LivePanel({ active }: { active: boolean }) {
     }
   }, [active, mode, stopLive]);
   useEffect(() => () => void stopLive(), [stopLive]);
+  // Picking another surface in the top bar ends a preview of the old one.
+  const surfaceKey = surfaceValue(surface);
   useEffect(() => {
-    if (active && windows.length === 0) void refreshWindows();
-  }, [active, windows.length, refreshWindows]);
+    if (modeRef.current === 'live') void stopLive().then(() => setMode('idle'));
+  }, [surfaceKey, stopLive]);
 
   const toImage = (e: React.PointerEvent) => {
     const box = (stageRef.current ?? e.currentTarget).getBoundingClientRect();
@@ -229,22 +249,8 @@ export function LivePanel({ active }: { active: boolean }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-col gap-2 border-b border-line p-3">
-        <div className="flex items-center gap-1.5">
-          <Select
-            value={surfaceValue(surface)}
-            disabled={mode !== 'idle'}
-            onChange={(e) => setSurface(e.target.value === 'full' ? { kind: 'fullScreen' } : { kind: 'window', number: Number(e.target.value) })}
-          >
-            <option value="full">整个屏幕</option>
-            {windows.map((w) => (
-              <option key={w.number} value={w.number}>
-                {w.label}
-              </option>
-            ))}
-          </Select>
-          <Button variant="ghost" title="刷新窗口列表" onClick={refreshWindows}>
-            <RefreshCw size={14} />
-          </Button>
+        <div className="text-xs text-mute" title="在顶部栏的「画面」里选择">
+          画面：<span className={surface ? 'text-ink' : 'text-amber-400'}>{surface ? surfaceLabel(surface, windows) : '未选择，请先在顶部栏选择'}</span>
         </div>
         <div className="flex gap-1.5">
           {mode === 'idle' && (
@@ -268,6 +274,9 @@ export function LivePanel({ active }: { active: boolean }) {
             </Button>
           )}
         </div>
+        <Button disabled={mode === 'live'} title={mode === 'live' ? '先停止预览' : '用一张截图代替实时画面，在上面框选目标'} onClick={() => void uploadImage()}>
+          <ImageUp size={14} /> 上传图片标注
+        </Button>
         {error && <div className="text-xs text-red-400">{error}</div>}
       </div>
 
@@ -297,8 +306,13 @@ export function LivePanel({ active }: { active: boolean }) {
                 ))}
             </div>
           )}
-          {mode === 'idle' && !frame && <div className="absolute inset-0 flex items-center justify-center text-mute">点击「开始预览」</div>}
+          {mode === 'idle' && !frame && <div className="absolute inset-0 flex items-center justify-center text-mute">点击「开始预览」或上传图片</div>}
         </div>
+        {mode === 'frozen' && source === 'image' && frame && (
+          <p className="mt-2 text-xs text-amber-400">
+            已载入上传的图片（{frame.w}×{frame.h}）。请上传整个屏幕或整个窗口的完整截图，不要先裁剪：匹配按画面宽度归一化，分辨率可以和运行时不同，但取景范围要一致。
+          </p>
+        )}
         {mode === 'frozen' && <p className="mt-2 text-xs text-mute">拖动框选目标；单击让引擎自动圈出，再次单击在候选框之间切换；拖动框上的小方块可以微调范围。</p>}
       </div>
 

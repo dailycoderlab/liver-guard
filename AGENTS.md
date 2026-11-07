@@ -10,10 +10,11 @@ LiverGuard（中文名「护肝」）是纯本地的桌面自动化工具：用�
 
 | 路径 | 说明 |
 | --- | --- |
-| `crates/liverguard-ir` | 脚本 IR v2、校验、JSON Schema（前端类型的来源） |
+| `crates/liverguard-ir` | 脚本 IR v3、校验、JSON Schema（前端类型的来源） |
 | `crates/liverguard-vision` | 模板匹配、控件检测、模板裁剪（OpenCV） |
 | `crates/liverguard-engine` | `Driver` trait 与图解释器，平台无关 |
-| `crates/liverguard-store` | `~/.liverguard` 本地存储（`LIVERGUARD_HOME` 可覆盖） |
+| `crates/liverguard-store` | `~/.liverguard` 本地存储（`LIVERGUARD_HOME` 可覆盖），含 `settings.json` |
+| `crates/liverguard-notify` | 失败告警的 Webhook 构造与发送（钉钉、企业微信、飞书、通用） |
 | `crates/liverguard-driver-mac` / `liverguard-driver-win` | 各平台截图、输入、窗口、权限 |
 | `crates/liverguard-cli` | 命令行 `liverguard`，与桌面应用共用核心 |
 | `apps/desktop/src-tauri` | Tauri 外壳，只做命令转发 |
@@ -41,6 +42,7 @@ cd apps/desktop/web && pnpm typecheck && pnpm test      # 前端类型与测试
 cd apps/desktop/web && pnpm gen:types                    # IR 变更后重新生成 TS 类型
 cd apps/desktop && ./web/node_modules/.bin/tauri dev     # 真实桌面应用（不是浏览器里的 1420）
 cd apps/desktop && ./web/node_modules/.bin/tauri build --bundles app
+scripts/mac-dev-build.sh # macOS 本机打包并用固定的自签名证书签名，重复打包不丢系统权限授权
 ```
 
 注意：

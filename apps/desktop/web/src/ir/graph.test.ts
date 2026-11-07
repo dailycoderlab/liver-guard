@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NODE_SPECS, outputHandles, targetRefs } from './catalog';
+import { nodeBox } from './nodeBox';
 import {
   appendAfter,
   autoLayout,
@@ -19,7 +20,7 @@ import {
 import { emptyDoc, type IrDoc, type NodeType } from './model';
 
 function flowWith(...kinds: NodeType[]): FlowState {
-  const flow = toFlowState(emptyDoc('t').flows.main);
+  const flow = toFlowState(emptyDoc('t').flow);
   for (const kind of kinds) {
     flow.nodes.push(createNode(flow, kind, NODE_SPECS[kind].defaults(), { x: 0, y: 0 }));
   }
@@ -40,7 +41,6 @@ describe('catalog handles mirror the Rust engine', () => {
     ['if', ['true', 'false']],
     ['loop', ['body', 'done']],
     ['retry', ['body', 'done', 'failed']],
-    ['call', ['next']],
   ];
   it.each(cases)('%s', (type, expected) => {
     expect(outputHandles(type).map((h) => h.id)).toEqual(expected);
@@ -172,7 +172,7 @@ describe('targets', () => {
   it('finds unused targets', () => {
     const doc: IrDoc = emptyDoc('t');
     doc.targets = { used: { type: 'point', norm: [0, 0], zone: [0, 0, 1, 1] }, idle: { type: 'point', norm: [0, 0], zone: [0, 0, 1, 1] } };
-    doc.flows.main.nodes.push({ id: 'n1', type: 'tap', pos: { x: 0, y: 0 }, data: { target: 'used' } });
+    doc.flow.nodes.push({ id: 'n1', type: 'tap', pos: { x: 0, y: 0 }, data: { target: 'used' } });
     expect(unusedTargets(doc)).toEqual(['idle']);
   });
 });
@@ -180,24 +180,136 @@ describe('targets', () => {
 describe('wire format', () => {
   it('round-trips through React Flow state unchanged', () => {
     const doc = emptyDoc('t');
-    doc.flows.main.nodes.push({ id: 'n1', type: 'tap', pos: { x: 260, y: 0 }, label: 'buy', maxVisits: 5, data: { target: 'a', durationMs: 60 } });
-    doc.flows.main.edges.push({ id: 'e1', source: 'start', sourceHandle: 'next', target: 'n1' });
-    expect(fromFlowState(toFlowState(doc.flows.main))).toEqual(doc.flows.main);
+    doc.flow.nodes.push({ id: 'n1', type: 'tap', pos: { x: 260, y: 0 }, label: 'buy', maxVisits: 5, data: { target: 'a', durationMs: 60 } });
+    doc.flow.edges.push({ id: 'e1', source: 'start', sourceHandle: 'next', target: 'n1' });
+    expect(fromFlowState(toFlowState(doc.flow))).toEqual(doc.flow);
   });
 
   it('omits optional editor fields when unset', () => {
-    const flow = fromFlowState(toFlowState(emptyDoc('t').flows.main));
+    const flow = fromFlowState(toFlowState(emptyDoc('t').flow));
     expect(Object.keys(flow.nodes[0]).sort()).toEqual(['data', 'id', 'pos', 'type']);
   });
 });
 
+describe('nodeBox', () => {
+  it('adds up the card: border, header, optional body, one row per output', () => {
+    const start = nodeBox('start', {});
+    expect(start.height).toBe(1 + 32 + 24 + 1);
+    expect(start.outs.map((o) => [o.id, o.y])).toEqual([['next', 1 + 32 + 12.5]]);
+
+    const tap = nodeBox('tap', { target: 't' });
+    expect(tap.height).toBe(1 + 32 + 44 + 48 + 1);
+    expect(tap.outs.map((o) => o.y)).toEqual([1 + 32 + 44 + 12.5, 1 + 32 + 44 + 24 + 12.5]);
+    expect(tap.inY).toBe(tap.outs[0].y);
+
+    const end = nodeBox('end', {});
+    expect(end.height).toBe(1 + 32 + 1);
+    expect(end.outs).toEqual([]);
+    expect(end.inY).toBe(17.5);
+  });
+});
+
 describe('autoLayout', () => {
-  it('lays a chain out left to right', () => {
-    let flow = flowWith('log', 'log');
-    flow = { ...flow, edges: connect(flow, { source: 'start', sourceHandle: 'next', target: 'n1', targetHandle: null }) };
-    flow = { ...flow, edges: connect(flow, { source: 'n1', sourceHandle: 'next', target: 'n2', targetHandle: null }) };
-    const xs = autoLayout(flow).map((n) => n.position.x);
-    expect(xs[0]).toBeLessThan(xs[1]);
-    expect(xs[1]).toBeLessThan(xs[2]);
+  type Wire = [string, string, string]; // source id, handle, target id
+
+  async function laidOut(kinds: Record<string, NodeType>, wires: Wire[], params: Record<string, Record<string, unknown>> = {}) {
+    const flow = toFlowState(emptyDoc('t').flow);
+    for (const [id, kind] of Object.entries(kinds)) {
+      if (kind === 'start') continue;
+      const node = createNode(flow, kind, { ...NODE_SPECS[kind].defaults(), ...params[id] }, { x: 0, y: 0 });
+      flow.nodes.push({ ...node, id });
+    }
+    let edges = flow.edges;
+    for (const [source, sourceHandle, target] of wires) {
+      edges = connect({ nodes: flow.nodes, edges }, { source: source === 'start' ? 'start' : source, sourceHandle, target, targetHandle: null });
+    }
+    const nodes = await autoLayout({ nodes: flow.nodes, edges });
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const box = (id: string) => nodeBox(byId.get(id)!.data.kind, byId.get(id)!.data.params);
+    return { nodes, edges, byId, box };
+  }
+
+  function overlaps(nodes: Awaited<ReturnType<typeof laidOut>>['nodes']) {
+    const found: string[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const [a, b] = [nodes[i], nodes[j]];
+        const ba = nodeBox(a.data.kind, a.data.params);
+        const bb = nodeBox(b.data.kind, b.data.params);
+        const apart =
+          a.position.x + ba.width <= b.position.x || b.position.x + bb.width <= a.position.x || a.position.y + ba.height <= b.position.y || b.position.y + bb.height <= a.position.y;
+        if (!apart) found.push(`${a.id}/${b.id}`);
+      }
+    }
+    return found;
+  }
+
+  const handleY = (l: Awaited<ReturnType<typeof laidOut>>, id: string, handle: string) => l.byId.get(id)!.position.y + l.box(id).outs.find((o) => o.id === handle)!.y;
+  const inY = (l: Awaited<ReturnType<typeof laidOut>>, id: string) => l.byId.get(id)!.position.y + l.box(id).inY;
+
+  it('lays a chain out left to right with every edge a straight line', async () => {
+    const l = await laidOut({ start: 'start', a: 'tap', b: 'log', c: 'tap', done: 'end' }, [
+      ['start', 'next', 'a'],
+      ['a', 'next', 'b'],
+      ['b', 'next', 'c'],
+      ['c', 'next', 'done'],
+    ], { a: { target: 't' }, c: { target: 't' } });
+    const xs = ['start', 'a', 'b', 'c', 'done'].map((id) => l.byId.get(id)!.position.x);
+    expect([...xs].sort((p, q) => p - q)).toEqual(xs);
+    expect(new Set(xs).size).toBe(5);
+    for (const [source, handle, target] of [['start', 'next', 'a'], ['a', 'next', 'b'], ['b', 'next', 'c'], ['c', 'next', 'done']]) {
+      expect(handleY(l, source, handle), `${source} -> ${target}`).toBe(inY(l, target));
+    }
+  });
+
+  it('puts the branches of a node in handle order without overlapping', async () => {
+    const l = await laidOut(
+      { start: 'start', test: 'if', yes: 'tap', no: 'tap', end1: 'end', end2: 'end' },
+      [
+        ['start', 'next', 'test'],
+        ['test', 'true', 'yes'],
+        ['test', 'false', 'no'],
+        ['yes', 'next', 'end1'],
+        ['no', 'next', 'end2'],
+      ],
+      { yes: { target: 'a' }, no: { target: 'b' } },
+    );
+    expect(overlaps(l.nodes)).toEqual([]);
+    expect(l.byId.get('yes')!.position.y).toBeLessThan(l.byId.get('no')!.position.y);
+    expect(l.byId.get('yes')!.position.x).toBeGreaterThan(l.byId.get('test')!.position.x);
+  });
+
+  it('keeps a loop, a merge, a switch and a loose node apart', async () => {
+    const l = await laidOut(
+      { start: 'start', find: 'waitFor', tap1: 'tap', tap2: 'tap', pick: 'switch', retry: 'retry', work: 'log', done: 'end', loose: 'log', alt: 'tap', fail: 'end' },
+      [
+        ['start', 'next', 'find'],
+        ['find', 'found', 'tap1'],
+        ['find', 'timeout', 'fail'],
+        ['tap1', 'next', 'pick'],
+        ['tap1', 'fail', 'retry'],
+        ['pick', 'case:x', 'tap2'],
+        ['pick', 'case:y', 'alt'],
+        ['pick', 'default', 'work'],
+        ['tap2', 'next', 'work'],
+        ['alt', 'next', 'work'],
+        ['alt', 'fail', 'find'], // back edge: a loop
+        ['work', 'next', 'done'],
+        ['retry', 'body', 'tap1'], // another cycle
+        ['retry', 'done', 'work'],
+        ['retry', 'failed', 'fail'],
+      ],
+      { find: { any: ['x'] }, tap1: { target: 'x' }, tap2: { target: 'y' }, alt: { target: 'z' }, pick: { cases: ['x', 'y'] } },
+    );
+    expect(overlaps(l.nodes)).toEqual([]);
+    const start = l.byId.get('start')!;
+    for (const node of l.nodes) if (node.id !== 'loose') expect(node.position.x).toBeGreaterThanOrEqual(start.position.x);
+  });
+
+  it('leaves edges it cannot draw alone and does not choke on an empty graph', async () => {
+    const empty = toFlowState(emptyDoc('t').flow);
+    expect(await autoLayout({ nodes: [], edges: [] })).toEqual([]);
+    const lone = await autoLayout({ nodes: empty.nodes, edges: [{ id: 'e1', source: 'start', sourceHandle: 'gone', target: 'start' }] });
+    expect(lone).toHaveLength(1);
   });
 });

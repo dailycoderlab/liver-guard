@@ -14,11 +14,13 @@ use opencv::prelude::*;
 use serde_json::{json, Value};
 use liverguard_engine::{Driver, DriverError, EventSink, ProbeRow};
 use liverguard_ir::{Bounds, IrDoc, Problem, Rect, Target};
+use liverguard_notify::NotifyConfig;
 use liverguard_store::{LocalStore, ScriptRecord, ScriptSummary};
 use liverguard_vision::detect::{detect_candidates as detect, DetectOptions, PixelBox};
 use liverguard_vision::{author, AssetStore, Frame};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::platform::{self, PermissionInfo, Surface, WindowRow};
 
@@ -28,6 +30,7 @@ const LIVE_INTERVAL: Duration = Duration::from_millis(120);
 const LIVE_JPEG_QUALITY: i32 = 72;
 const LIVE_MAX_WIDTH: i32 = 1280;
 const HEADER_BYTES: usize = 48;
+const MAX_IMAGE_BYTES: usize = 30 * 1024 * 1024;
 
 /// The frame the user froze; `detect_candidates` and `create_template` work on
 /// exactly these pixels, matched by sequence number.
@@ -35,6 +38,9 @@ struct Pinned {
     seq: u64,
     image: Mat,
     bounds: Bounds,
+    /// A user-supplied image rather than a capture: there is no screen under
+    /// it, so the accessibility lookup must be skipped.
+    external: bool,
 }
 
 struct LiveHandle {
@@ -138,6 +144,60 @@ pub fn rename_script(state: State<'_, AppState>, id: String, name: String) -> Cm
 }
 
 #[tauri::command]
+pub fn duplicate_script(state: State<'_, AppState>, id: String, name: String) -> CmdResult<ScriptRecord> {
+    state.store.duplicate_script(&id, &name).map_err(err)
+}
+
+/// Largest script file we will read: images are embedded, but a runaway file is still a mistake.
+const MAX_IMPORT_BYTES: u64 = 200 * 1024 * 1024;
+
+/// A file name that is safe on macOS and Windows, built from the script name.
+fn export_file_name(name: &str) -> String {
+    let cleaned: String = name.chars().map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c }).collect();
+    let cleaned = cleaned.trim().trim_matches('.');
+    format!("{}.liverguard.json", if cleaned.is_empty() { "script" } else { cleaned })
+}
+
+/// Save the script and its template images to a file the user picks. Resolves the path written,
+/// or `None` when the dialog was cancelled.
+#[tauri::command]
+pub async fn export_script(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<Option<String>> {
+    let store = state.store.clone();
+    blocking(move || {
+        let bundle = store.export_script(&id).map_err(err)?;
+        let picked = app
+            .dialog()
+            .file()
+            .add_filter("LiverGuard 脚本", &["json"])
+            .set_file_name(export_file_name(&bundle.name))
+            .blocking_save_file();
+        let Some(picked) = picked else { return Ok(None) };
+        let path = picked.into_path().map_err(err)?;
+        let bytes = serde_json::to_vec_pretty(&bundle).map_err(err)?;
+        std::fs::write(&path, bytes).map_err(err)?;
+        Ok(Some(path.display().to_string()))
+    })
+    .await
+}
+
+/// Pick an exported script file and add it as a new script. `None` when cancelled.
+#[tauri::command]
+pub async fn import_script(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Option<ScriptRecord>> {
+    let store = state.store.clone();
+    blocking(move || {
+        let picked = app.dialog().file().add_filter("LiverGuard 脚本", &["json"]).blocking_pick_file();
+        let Some(picked) = picked else { return Ok(None) };
+        let path = picked.into_path().map_err(err)?;
+        if std::fs::metadata(&path).map_err(err)?.len() > MAX_IMPORT_BYTES {
+            return Err("文件过大，不像是导出的脚本".to_string());
+        }
+        let bytes = std::fs::read(&path).map_err(err)?;
+        store.import_bytes(&bytes).map(Some).map_err(err)
+    })
+    .await
+}
+
+#[tauri::command]
 pub fn delete_script(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.store.delete_script(&id).map_err(err)
 }
@@ -145,6 +205,31 @@ pub fn delete_script(state: State<'_, AppState>, id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn validate_ir(ir: IrDoc) -> Vec<Problem> {
     ir.validate()
+}
+
+// ----------------------------------------------------------------- settings
+
+#[tauri::command]
+pub fn get_notify_config(state: State<'_, AppState>) -> CmdResult<NotifyConfig> {
+    state.store.load_settings().map(|s| s.notify).map_err(err)
+}
+
+/// Save the alert settings. A half-filled form is fine while alerts are off; once switched on the
+/// configuration has to be usable.
+#[tauri::command]
+pub fn save_notify_config(state: State<'_, AppState>, config: NotifyConfig) -> CmdResult<()> {
+    if config.enabled {
+        liverguard_notify::validate(&config).map_err(err)?;
+    }
+    let mut settings = state.store.load_settings().map_err(err)?;
+    settings.notify = config;
+    state.store.save_settings(&settings).map_err(err)
+}
+
+/// Send a test message with the config as typed in the form (not necessarily saved yet).
+#[tauri::command]
+pub async fn send_test_notification(config: NotifyConfig) -> CmdResult<()> {
+    blocking(move || liverguard_notify::send(&config, &liverguard_notify::test_message()).map_err(err)).await
 }
 
 // ----------------------------------------------------------------- platform
@@ -237,31 +322,59 @@ pub async fn snapshot(state: State<'_, AppState>) -> CmdResult<Response> {
     })
     .await?;
     let reply = packet(seq, &bounds, &png);
-    *state.pinned.lock().unwrap() = Some(Pinned { seq, image, bounds });
+    *state.pinned.lock().unwrap() = Some(Pinned { seq, image, bounds, external: false });
     Ok(Response::new(reply))
 }
 
-fn pinned_frame(state: &AppState, seq: u64) -> CmdResult<(Mat, Bounds)> {
+/// Pins a user-supplied screenshot in place of a capture. The request body is
+/// the raw file; the reply has the same layout as `snapshot`.
+#[tauri::command]
+pub async fn load_image(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> CmdResult<Response> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("需要图片的原始字节".to_string());
+    };
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!("图片超过 {} MB", MAX_IMAGE_BYTES / 1024 / 1024));
+    }
+    let bytes = bytes.clone();
+    state.stop_live();
+    let seq = state.next_seq();
+    let (png, bounds, image) = blocking(move || {
+        let (image, bounds) = author::decode_image(&bytes).map_err(err)?;
+        let png = Frame::new(image.try_clone().map_err(err)?, bounds).to_png().map_err(err)?;
+        Ok((png, bounds, image))
+    })
+    .await?;
+    let reply = packet(seq, &bounds, &png);
+    *state.pinned.lock().unwrap() = Some(Pinned { seq, image, bounds, external: true });
+    Ok(Response::new(reply))
+}
+
+fn pinned_frame(state: &AppState, seq: u64) -> CmdResult<(Mat, Bounds, bool)> {
     let guard = state.pinned.lock().unwrap();
     match guard.as_ref() {
-        Some(pinned) if pinned.seq == seq => Ok((pinned.image.try_clone().map_err(err)?, pinned.bounds)),
+        Some(pinned) if pinned.seq == seq => Ok((pinned.image.try_clone().map_err(err)?, pinned.bounds, pinned.external)),
         _ => Err("画面已过期，请重新冻结后再操作".to_string()),
     }
 }
 
 #[tauri::command]
 pub async fn detect_candidates(state: State<'_, AppState>, seq: u64, x: f64, y: f64) -> CmdResult<Vec<Rect>> {
-    let (image, bounds) = pinned_frame(&state, seq)?;
+    let (image, bounds, external) = pinned_frame(&state, seq)?;
     let surface = *state.surface.lock().unwrap();
     blocking(move || {
-        // The native accessibility box is a bonus, never a requirement.
-        let (gx, gy) = platform::pixel_to_global(&bounds, x, y);
-        let ax_box = platform::make_driver(surface).ax_at(gx, gy).ok().flatten().map(|r| PixelBox {
-            x: (r.x - bounds.x) * bounds.scale,
-            y: (r.y - bounds.y) * bounds.scale,
-            w: r.w * bounds.scale,
-            h: r.h * bounds.scale,
-        });
+        // The native accessibility box is a bonus, never a requirement; an uploaded image has no screen to ask.
+        let ax_box = if external {
+            None
+        } else {
+            let (gx, gy) = platform::pixel_to_global(&bounds, x, y);
+            platform::make_driver(surface).ax_at(gx, gy).ok().flatten().map(|r| PixelBox {
+                x: (r.x - bounds.x) * bounds.scale,
+                y: (r.y - bounds.y) * bounds.scale,
+                w: r.w * bounds.scale,
+                h: r.h * bounds.scale,
+            })
+        };
         let options = DetectOptions { scale: bounds.scale, ax_box, ..DetectOptions::default() };
         let found = detect(&image, (x, y), &options).map_err(err)?;
         Ok(found.into_iter().map(|c| Rect::new(c.x, c.y, c.w, c.h)).collect())
@@ -271,7 +384,7 @@ pub async fn detect_candidates(state: State<'_, AppState>, seq: u64, x: f64, y: 
 
 #[tauri::command]
 pub async fn create_template(state: State<'_, AppState>, seq: u64, rect: Rect) -> CmdResult<Target> {
-    let (image, bounds) = pinned_frame(&state, seq)?;
+    let (image, bounds, _) = pinned_frame(&state, seq)?;
     let store = state.store.clone();
     blocking(move || {
         let frame = Frame::new(image, bounds);
@@ -301,7 +414,7 @@ pub async fn probe(state: State<'_, AppState>, ir: IrDoc, surface: Surface) -> C
 }
 
 #[tauri::command]
-pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, on_message: Channel<Value>) -> CmdResult<String> {
+pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, repeat: u32, on_message: Channel<Value>) -> CmdResult<String> {
     state.stop_live();
     let stop = Arc::new(AtomicBool::new(false));
     {
@@ -319,7 +432,7 @@ pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, 
     std::thread::Builder::new()
         .name("liverguard-run".into())
         .spawn(move || {
-            let done = execute(&store, &ir, surface, &id, stop, &on_message);
+            let done = execute(&store, &ir, surface, repeat, &id, stop, &on_message);
             let _ = on_message.send(done);
             *release.lock().unwrap() = None;
         })
@@ -327,7 +440,7 @@ pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, 
     Ok(run_id)
 }
 
-fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, run_id: &str, stop: Arc<AtomicBool>, channel: &Channel<Value>) -> Value {
+fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, repeat: u32, run_id: &str, stop: Arc<AtomicBool>, channel: &Channel<Value>) -> Value {
     let mut driver = platform::make_driver(surface);
     let events = channel.clone();
     let sink: EventSink = Arc::new(move |event| {
@@ -335,6 +448,19 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, run_id: &str, stop:
             let _ = events.send(value);
         }
     });
+
+    // A settings file that cannot be read must not silently turn alerts off.
+    let alert = match store.load_settings() {
+        Ok(settings) => Some(settings.notify).filter(|n| n.enabled),
+        Err(error) => {
+            sink(&liverguard_engine::RunEvent::Log {
+                level: "warn".into(),
+                event: "alert_unavailable".into(),
+                payload: json!({ "message": format!("读取通知设置失败，本次运行不会发送失败通知：{error}") }),
+            });
+            None
+        }
+    };
 
     let failed = |message: String| {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
@@ -345,7 +471,7 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, run_id: &str, stop:
     };
 
     let assets = AssetStore::with_dir(store.assets_dir());
-    match liverguard_engine::run_local(ir, &mut *driver, assets, run_id, stop, Some(sink)) {
+    match liverguard_engine::run_local(ir, &mut *driver, assets, run_id, stop, liverguard_engine::RunOptions { sink: Some(sink), rounds: repeat, alert }) {
         Err(message) => failed(message),
         Ok((result, reporter)) => {
             let mut record = result.to_json();
@@ -372,4 +498,17 @@ pub fn list_runs(state: State<'_, AppState>) -> CmdResult<Vec<Value>> {
 #[tauri::command]
 pub fn get_run(state: State<'_, AppState>, id: String) -> CmdResult<Value> {
     state.store.get_run(&id).map_err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::export_file_name;
+
+    #[test]
+    fn export_file_names_are_safe_on_both_platforms() {
+        assert_eq!(export_file_name("契灵"), "契灵.liverguard.json");
+        assert_eq!(export_file_name(r#"a/b\c:d*e?f"g<h>i|j"#), "a_b_c_d_e_f_g_h_i_j.liverguard.json");
+        assert_eq!(export_file_name("  ..  "), "script.liverguard.json");
+        assert_eq!(export_file_name(""), "script.liverguard.json");
+    }
 }

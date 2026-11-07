@@ -3,30 +3,35 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useRef } from 'react';
 import { NODE_SPECS } from '@/ir/catalog';
 import type { NodeType } from '@/ir/model';
-import { selectFlow, useEditor } from '@/store/editor';
+import { useEditor } from '@/store/editor';
 import { LiverGuardNodeComponent } from './LiverGuardNode';
 
 const nodeTypes: NodeTypes = { liverguard: LiverGuardNodeComponent };
 export const DRAG_MIME = 'application/x-liverguard-node';
 
 function CanvasInner() {
-  const nodes = useEditor((s) => selectFlow(s).nodes);
-  const edges = useEditor((s) => selectFlow(s).edges);
-  const activeFlow = useEditor((s) => s.activeFlow);
+  const nodes = useEditor((s) => s.flow.nodes);
+  const edges = useEditor((s) => s.flow.edges);
   // The graph is read-only while a run is in progress: node ids in the run overlay must keep meaning.
   const locked = useEditor((s) => s.runStatus !== 'idle');
   const { onNodesChange, onEdgesChange, onConnect, beginDrag, addNode } = useEditor.getState();
   const flow = useReactFlow();
   const fitted = useRef<string | null>(null);
 
-  // Fit the view the first time each flow of each script is shown.
+  // Fit the view the first time each script is shown.
   const scriptId = useEditor((s) => s.scriptId);
   useEffect(() => {
-    const key = `${scriptId}/${activeFlow}`;
-    if (fitted.current === key) return;
-    fitted.current = key;
+    if (fitted.current === scriptId) return;
+    fitted.current = scriptId;
     requestAnimationFrame(() => flow.fitView({ padding: 0.3, maxZoom: 1, duration: 0 }));
-  }, [scriptId, activeFlow, flow]);
+  }, [scriptId, flow]);
+
+  // After 整理 the graph may have moved out of view.
+  const layoutTick = useEditor((s) => s.layoutTick);
+  useEffect(() => {
+    if (layoutTick === 0) return;
+    requestAnimationFrame(() => flow.fitView({ padding: 0.3, maxZoom: 1, duration: 200 }));
+  }, [layoutTick, flow]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {

@@ -1,6 +1,7 @@
 //! The only surface a platform driver has to implement.
 //!
-//! Six primitives plus an optional native UI lookup. Matching, waiting,
+//! A handful of primitives (`tap` / `swipe` for exact input, `pointer` for paced
+//! human-like input) plus optional lookups. Matching, waiting,
 //! branching, retry and reporting live in the engine and are shared by every
 //! platform.
 
@@ -24,6 +25,16 @@ impl DriverError {
 
 pub type DriverResult<T> = Result<T, DriverError>;
 
+/// One raw pointer event for human-like input, which the engine paces itself.
+/// `Move` is a hover, `Drag` is a move while the button is held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerAction {
+    Move,
+    Down,
+    Drag,
+    Up,
+}
+
 pub trait Driver: Send {
     /// Current capture surface, logical points in global coordinates.
     fn bounds(&mut self) -> DriverResult<Bounds>;
@@ -36,6 +47,24 @@ pub trait Driver: Send {
 
     /// Drag between two global logical points.
     fn swipe(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, duration_ms: u32) -> DriverResult<()>;
+
+    /// Inject one raw pointer event at a global logical point. The engine plans the
+    /// path and timing (see `human`); the driver only sends the event, with no
+    /// target checks of its own (`check_input` runs once before a whole plan).
+    fn pointer(&mut self, action: PointerAction, x: f64, y: f64) -> DriverResult<()>;
+
+    /// Where the pointer is now, so a human-like move can start from there.
+    /// `None` when the platform cannot tell.
+    fn pointer_position(&mut self) -> DriverResult<Option<(f64, f64)>> {
+        Ok(None)
+    }
+
+    /// Verify, before a sequence of raw pointer events, that clicking and dragging
+    /// at these points is allowed (right window, in front, not covered). Hover moves
+    /// are not checked.
+    fn check_input(&mut self, _points: &[(f64, f64)]) -> DriverResult<()> {
+        Ok(())
+    }
 
     /// Press a named key (`return`, `escape`, `space`, `tab`, ...).
     fn key(&mut self, name: &str) -> DriverResult<()>;
@@ -61,6 +90,15 @@ impl<D: Driver + ?Sized> Driver for Box<D> {
     }
     fn swipe(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, duration_ms: u32) -> DriverResult<()> {
         (**self).swipe(x1, y1, x2, y2, duration_ms)
+    }
+    fn pointer(&mut self, action: PointerAction, x: f64, y: f64) -> DriverResult<()> {
+        (**self).pointer(action, x, y)
+    }
+    fn pointer_position(&mut self) -> DriverResult<Option<(f64, f64)>> {
+        (**self).pointer_position()
+    }
+    fn check_input(&mut self, points: &[(f64, f64)]) -> DriverResult<()> {
+        (**self).check_input(points)
     }
     fn key(&mut self, name: &str) -> DriverResult<()> {
         (**self).key(name)

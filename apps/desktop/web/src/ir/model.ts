@@ -1,4 +1,4 @@
-// Editor-side view of IR v2. The wire shape matches crates/liverguard-ir; `generated.ts`
+// Editor-side view of IR v3. The wire shape matches crates/liverguard-ir; `generated.ts`
 // (from the Rust JSON Schema) is the source for `Target` and `Condition`.
 
 import type { Condition, Target } from './generated';
@@ -23,8 +23,7 @@ export type NodeType =
   | 'switch'
   | 'loop'
   | 'retry'
-  | 'setVar'
-  | 'call';
+  | 'setVar';
 
 export type VarValue = boolean | number | string;
 
@@ -60,36 +59,27 @@ export interface IrMeta {
   name: string;
   game?: string;
   minEngine?: string;
-  maxDurationMs: number;
 }
 
 export interface IrDoc {
-  irVersion: 2;
+  irVersion: 3;
   meta: IrMeta;
-  vars: Record<string, VarValue>;
   targets: Record<string, Target>;
-  entry: string;
-  flows: Record<string, IrFlow>;
+  flow: IrFlow;
 }
 
 export interface Problem {
   severity: 'error' | 'warning';
   message: string;
-  flow: string | null;
   node: string | null;
 }
 
-export const DEFAULT_MAX_DURATION_MS = 1_800_000;
-export const MAIN_FLOW = 'main';
-
 export function emptyDoc(name: string): IrDoc {
   return {
-    irVersion: 2,
-    meta: { name, maxDurationMs: DEFAULT_MAX_DURATION_MS },
-    vars: {},
+    irVersion: 3,
+    meta: { name },
     targets: {},
-    entry: MAIN_FLOW,
-    flows: { [MAIN_FLOW]: { nodes: [startNode('start', { x: 0, y: 0 })], edges: [] } },
+    flow: { nodes: [startNode('start', { x: 0, y: 0 })], edges: [] },
   };
 }
 

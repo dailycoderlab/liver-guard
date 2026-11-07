@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ProbeRow, ScriptSummary, WindowInfo } from '@/api';
+import type { FramePacket, ProbeRow, ScriptSummary, WindowInfo } from '@/api';
 import { loadSizes, saveSizes, type PanelSizes } from '@/lib/layout';
 
 export type LeftTab = 'scripts' | 'nodes' | 'targets';
@@ -15,6 +15,12 @@ interface UiState extends PanelSizes {
   windows: WindowInfo[];
   probeRows: ProbeRow[] | null;
   probing: boolean;
+  /** An uploaded screenshot waiting for the 画面 panel to take it over. */
+  pendingFrame: FramePacket | null;
+  /** How many rounds the 循环 button runs; kept for the session so it can be re-run quickly. */
+  repeatCount: number;
+  /** The surface picker is highlighted for a moment after something needed a surface that was not usable. */
+  surfaceAttention: boolean;
   busy: string | null;
   toast: { id: number; text: string; tone: 'info' | 'error' } | null;
   set: (patch: Partial<Omit<UiState, 'set' | 'notify' | 'setSize'>>) => void;
@@ -35,6 +41,9 @@ export const useUi = create<UiState>()((set, get) => ({
   windows: [],
   probeRows: null,
   probing: false,
+  pendingFrame: null,
+  repeatCount: 5,
+  surfaceAttention: false,
   busy: null,
   toast: null,
   set: (patch) => set(patch),

@@ -10,7 +10,7 @@ export function TargetSelect({ value, onChange, optional }: { value: string | nu
   const missing = value && !names.includes(value);
   return (
     <div className="flex items-center gap-2">
-      {value ? <TargetThumb name={value} className="h-8 w-12" /> : null}
+      {value ? <TargetThumb name={value} className="h-8 w-12" zoomable /> : null}
       <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)} className={missing ? 'border-red-500' : undefined}>
         <option value="">{optional ? '（无）' : '请选择目标'}</option>
         {missing && <option value={value}>{value}（不存在）</option>}
@@ -31,7 +31,7 @@ export function TargetMulti({ value, onChange }: { value: string[]; onChange: (n
     <div className="flex flex-col gap-1.5">
       {value.map((name, i) => (
         <div key={`${name}-${i}`} className="flex items-center gap-2 rounded-md border border-line bg-canvas px-1.5 py-1">
-          <TargetThumb name={name} />
+          <TargetThumb name={name} zoomable />
           <span className="min-w-0 flex-1 truncate">{name}</span>
           <button className="text-mute hover:text-ink" title="移除" onClick={() => onChange(value.filter((_, j) => j !== i))}>
             <X size={14} />

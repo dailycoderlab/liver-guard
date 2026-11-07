@@ -3,10 +3,10 @@
 //! Synchronous on purpose: it runs on a worker thread, so capture, matching and
 //! input injection never interleave with the UI thread.
 //!
-//! A flow is walked from its `start` node by following the wired output handle
+//! The graph is walked from its `start` node by following the wired output handle
 //! each node picks. Containers (`loop`, `retry`) run the chain hanging off their
 //! `body` handle to its end, then continue from `done`. Reaching an `end` node
-//! ends the current flow; inside a called flow it only returns to the caller.
+//! ends the run.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -18,15 +18,15 @@ use rand::Rng;
 use serde_json::json;
 use liverguard_ir::node::handle;
 use liverguard_ir::{
-    CompareOp, Condition, Flow, IrDoc, Jitter, LoopMode, Node, NodeKind, Rect, SwipeData, Target, VarValue,
+    CompareOp, Condition, Flow, IrDoc, LoopMode, Node, NodeKind, SwipeData, Target, VarValue,
 };
 use liverguard_vision::{Frame, Hit, Resolver};
 
-use crate::driver::Driver;
+use crate::driver::{Driver, PointerAction};
+use crate::human;
 use crate::error::{Reason, RunError, RunResultOf};
 use crate::report::{now_ms, NodeState, Reporter};
 
-pub const MAX_CALL_DEPTH: usize = 8;
 pub const MAX_STEPS: u64 = 200_000;
 pub const STAGNATION_LIMIT: u32 = 10;
 /// macOS blocks a grab for ~30s when the process has lost screen recording
@@ -103,12 +103,17 @@ pub struct Interpreter<'a> {
     vars: std::collections::BTreeMap<String, VarValue>,
     frame: Option<Rc<Frame>>,
     step_count: u64,
+    /// How many times `run` walks the graph from `start`; always at least 1.
+    rounds: u32,
+    /// The round being walked (1-based); stays on the failing round when a run fails.
+    round: u32,
+    alert: Option<(liverguard_notify::NotifyConfig, crate::alert::AlertSender)>,
+    /// `step_count` when the current round began; `MAX_STEPS` is measured from here.
+    round_first_step: u64,
     stagnation: u32,
     last_action_hash: Option<String>,
     reject: Option<String>,
-    deadline: Instant,
-    visits: HashMap<(String, String), u32>,
-    current_flow: String,
+    visits: HashMap<String, u32>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -119,23 +124,42 @@ impl<'a> Interpreter<'a> {
         reporter: Reporter,
         stop: Arc<AtomicBool>,
     ) -> Self {
-        let budget = Duration::from_millis(ir.meta.max_duration_ms.max(1000));
         Self {
             ir,
             driver,
             engine,
             reporter,
             stop,
-            vars: ir.vars.clone(),
+            vars: Default::default(),
             frame: None,
             step_count: 0,
+            rounds: 1,
+            round: 0,
+            alert: None,
+            round_first_step: 0,
             stagnation: 0,
             last_action_hash: None,
             reject: None,
-            deadline: Instant::now() + budget,
             visits: HashMap::new(),
-            current_flow: ir.entry.clone(),
         }
+    }
+
+    /// Walk the graph this many times in one run (default 1, values below 1 count as 1).
+    pub fn set_rounds(&mut self, rounds: u32) {
+        self.rounds = rounds.max(1);
+    }
+
+    /// Send a webhook message when the run ends in an unhandled failure, and, for a looping run
+    /// that completes every round, a done notice (`config.on_loop_done`). Does nothing unless
+    /// `config.enabled`. The outcome is logged as `alert_sent` / `alert_failed`; a failed
+    /// delivery never changes the run's own result.
+    pub fn set_alert(&mut self, config: liverguard_notify::NotifyConfig) {
+        self.set_alert_with(config, crate::alert::webhook_sender());
+    }
+
+    /// Like `set_alert` with a custom delivery function (tests).
+    pub fn set_alert_with(&mut self, config: liverguard_notify::NotifyConfig, sender: crate::alert::AlertSender) {
+        self.alert = config.enabled.then_some((config, sender));
     }
 
     pub fn vars(&self) -> &std::collections::BTreeMap<String, VarValue> {
@@ -150,10 +174,9 @@ impl<'a> Interpreter<'a> {
 
     pub fn run(&mut self) -> RunResult {
         let started_at = now_ms();
-        self.reporter.log("info", "run_start", json!({ "script": self.ir.meta.name, "entry": self.ir.entry }));
+        self.reporter.log("info", "run_start", json!({ "script": self.ir.meta.name }));
 
-        let entry = self.ir.entry.clone();
-        let outcome = self.run_flow(&entry, 0);
+        let outcome = self.run_rounds();
         let mut result = RunResult {
             state: RunState::Done,
             step_count: self.step_count,
@@ -165,7 +188,7 @@ impl<'a> Interpreter<'a> {
         };
 
         match outcome {
-            Ok(_) => self.reporter.log("info", "run_done", json!({ "steps": self.step_count })),
+            Ok(_) => self.reporter.log("info", "run_done", json!({ "steps": self.step_count, "rounds": self.rounds })),
             Err(error) if error.reason == Reason::Stopped => {
                 self.reporter.log("info", "run_stopped", json!({ "node": error.node_id }));
                 result.state = RunState::Stopped;
@@ -186,29 +209,67 @@ impl<'a> Interpreter<'a> {
         }
         result.step_count = self.step_count;
         result.ended_at = now_ms();
+        match result.state {
+            RunState::Failed => self.notify(&result),
+            // Only a looping run that finished every round: a single run's success is not news.
+            RunState::Done if self.rounds > 1 => self.notify(&result),
+            _ => {}
+        }
         result
     }
 
-    fn run_flow(&mut self, name: &str, depth: usize) -> RunResultOf<ChainEnd> {
-        if depth > MAX_CALL_DEPTH {
-            return Err(RunError::new(Reason::CallDepth, format!("call depth over {MAX_CALL_DEPTH}")));
+    /// Tell the configured webhook how the run ended: a failure alert for `Failed`, the
+    /// loop-done notice for `Done` (if the config wants it). Delivery trouble is only logged.
+    fn notify(&mut self, result: &RunResult) {
+        let Some((config, sender)) = self.alert.clone() else { return };
+        let message = match result.state {
+            RunState::Failed => crate::alert::failure_message(self.ir, result, self.round, self.rounds),
+            RunState::Done if config.on_loop_done => crate::alert::loop_done_message(self.ir, result, self.rounds),
+            _ => return,
+        };
+        match sender(&config, &message) {
+            Ok(()) => self.reporter.log("info", "alert_sent", json!({ "event": message.event, "round": self.round })),
+            Err(error) => self.reporter.log("warn", "alert_failed", json!({ "event": message.event, "message": error.to_string() })),
         }
-        let ir = self.ir;
-        let flow = ir
-            .flow(name)
-            .ok_or_else(|| RunError::new(Reason::UnknownFlow, format!("flow \"{name}\" is not defined")))?;
-        let start = flow
-            .start()
-            .ok_or_else(|| RunError::new(Reason::BadStep, format!("flow \"{name}\" has no start node")))?;
+    }
 
-        let previous = std::mem::replace(&mut self.current_flow, name.to_string());
-        let result = self.run_chain(flow, Some(start.id.as_str()), depth);
-        self.current_flow = previous;
-        result
+    /// Run the graph `rounds` times (set by the caller, not part of the script). Every round starts from `start` with no
+    /// variables set; an `end` node finishes the current round only. A failure or a stop ends the
+    /// whole run. There is no overall time limit: a run lasts until it ends or is stopped.
+    fn run_rounds(&mut self) -> RunResultOf<ChainEnd> {
+        let rounds = self.rounds;
+        let mut last = ChainEnd::Done;
+        for round in 1..=rounds {
+            self.round = round;
+            self.begin_round();
+            if rounds > 1 {
+                self.reporter.log("info", "round_start", json!({ "round": round, "total": rounds }));
+            }
+            last = self.run_graph()?;
+        }
+        Ok(last)
+    }
+
+    /// Forget everything one round learned so the next behaves like a fresh run.
+    fn begin_round(&mut self) {
+        self.vars.clear();
+        self.frame = None;
+        self.stagnation = 0;
+        self.last_action_hash = None;
+        self.reject = None;
+        self.visits.clear();
+        self.round_first_step = self.step_count;
+    }
+
+    fn run_graph(&mut self) -> RunResultOf<ChainEnd> {
+        let ir = self.ir;
+        let flow = &ir.flow;
+        let start = flow.start().ok_or_else(|| RunError::new(Reason::BadStep, "script has no start node"))?;
+        self.run_chain(flow, Some(start.id.as_str()))
     }
 
     /// Walk from `first`, following wired handles until the chain runs out.
-    fn run_chain(&mut self, flow: &'a Flow, first: Option<&'a str>, depth: usize) -> RunResultOf<ChainEnd> {
+    fn run_chain(&mut self, flow: &'a Flow, first: Option<&'a str>) -> RunResultOf<ChainEnd> {
         let mut current = first;
         while let Some(id) = current {
             let node = flow
@@ -216,13 +277,12 @@ impl<'a> Interpreter<'a> {
                 .ok_or_else(|| RunError::new(Reason::BadStep, format!("edge points at unknown node \"{id}\"")))?;
             self.tick(node)?;
 
-            let flow_name = self.current_flow.clone();
             let is_start = matches!(node.kind, NodeKind::Start(_));
             if !is_start {
-                self.reporter.node(&flow_name, &node.id, NodeState::Running, None, None, None);
+                self.reporter.node(&node.id, NodeState::Running, None, None, None);
             }
 
-            let outcome = match self.exec(flow, node, depth) {
+            let outcome = match self.exec(flow, node) {
                 Ok(outcome) => outcome,
                 Err(error) => {
                     let error = error.with_node(&node.id);
@@ -233,20 +293,20 @@ impl<'a> Interpreter<'a> {
                                 "routed_failure",
                                 json!({ "nodeId": node.id, "reason": error.reason.as_str(), "handle": route, "message": error.message }),
                             );
-                            self.reporter.node(&flow_name, &node.id, NodeState::Failed, None, None, Some(error.message.clone()));
+                            self.reporter.node(&node.id, NodeState::Failed, None, None, Some(error.message.clone()));
                             self.count_step()?;
                             current = flow.next(&node.id, route);
                             continue;
                         }
                     }
-                    self.reporter.node(&flow_name, &node.id, NodeState::Failed, None, None, Some(error.message.clone()));
+                    self.reporter.node(&node.id, NodeState::Failed, None, None, Some(error.message.clone()));
                     self.count_step().ok();
                     return Err(error);
                 }
             };
 
             if !is_start {
-                self.reporter.node(&flow_name, &node.id, NodeState::Ok, None, None, None);
+                self.reporter.node(&node.id, NodeState::Ok, None, None, None);
                 self.count_step()?;
             }
 
@@ -261,7 +321,8 @@ impl<'a> Interpreter<'a> {
 
     fn count_step(&mut self) -> RunResultOf<()> {
         self.step_count += 1;
-        if self.step_count > MAX_STEPS {
+        // The cap guards one round against a runaway graph; many rounds may add up to more.
+        if self.step_count - self.round_first_step > MAX_STEPS {
             return Err(RunError::new(Reason::StepLimit, format!("exceeded {MAX_STEPS} steps")));
         }
         Ok(())
@@ -269,8 +330,7 @@ impl<'a> Interpreter<'a> {
 
     fn tick(&mut self, node: &Node) -> RunResultOf<()> {
         self.check_stop()?;
-        self.check_deadline(&node.id)?;
-        let visits = self.visits.entry((self.current_flow.clone(), node.id.clone())).or_insert(0);
+        let visits = self.visits.entry(node.id.clone()).or_insert(0);
         *visits += 1;
         if let Some(limit) = node.max_visits {
             if *visits > limit {
@@ -283,13 +343,6 @@ impl<'a> Interpreter<'a> {
     fn check_stop(&self) -> RunResultOf<()> {
         if self.stop.load(Ordering::Relaxed) {
             return Err(RunError::stopped());
-        }
-        Ok(())
-    }
-
-    fn check_deadline(&self, node_id: &str) -> RunResultOf<()> {
-        if Instant::now() > self.deadline {
-            return Err(RunError::at(Reason::Timeout, "run exceeded maxDurationMs", node_id));
         }
         Ok(())
     }
@@ -434,19 +487,19 @@ impl<'a> Interpreter<'a> {
 
     // ------------------------------------------------------------ dispatch
 
-    fn exec(&mut self, flow: &'a Flow, node: &'a Node, depth: usize) -> RunResultOf<Outcome> {
+    fn exec(&mut self, flow: &'a Flow, node: &'a Node) -> RunResultOf<Outcome> {
         let id = node.id.as_str();
         match &node.kind {
             NodeKind::Start(_) => Ok(Outcome::Follow(handle::NEXT)),
             NodeKind::End(_) => Ok(Outcome::End),
             NodeKind::Tap(data) => {
                 let hit = self.require(&data.target, id)?;
-                self.jittered_click(id, &data.target, &hit, data.duration_ms, &data.jitter)?;
+                self.click(id, &data.target, &hit, data.duration_ms, data.human, data.spread)?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::LongPress(data) => {
                 let hit = self.require(&data.target, id)?;
-                self.jittered_click(id, &data.target, &hit, data.duration_ms, &data.jitter)?;
+                self.click(id, &data.target, &hit, data.duration_ms, data.human, data.spread)?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::Swipe(data) => {
@@ -474,10 +527,9 @@ impl<'a> Interpreter<'a> {
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::Sleep(data) => {
-                // A long sleep must not sail past the run deadline: cap it, then check.
-                let remaining = self.deadline.saturating_duration_since(Instant::now()).as_secs_f64() * 1000.0;
-                self.sleep((data.ms as f64).min(remaining))?;
-                self.check_deadline(id)?;
+                let wait_ms = pick_sleep_ms(data.min_ms, data.max_ms);
+                self.reporter.log("info", "sleep", json!({ "stepId": id, "ms": wait_ms, "minMs": data.min_ms, "maxMs": data.max_ms }));
+                self.sleep(wait_ms as f64)?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::WaitFor(data) => {
@@ -506,19 +558,14 @@ impl<'a> Interpreter<'a> {
                 Ok(Outcome::Follow(handle::DEFAULT))
             }
             NodeKind::Loop(data) => {
-                if let Some(Ended) = self.run_loop(flow, node, data, depth)? {
+                if let Some(Ended) = self.run_loop(flow, node, data)? {
                     return Ok(Outcome::End);
                 }
                 Ok(Outcome::Follow(handle::DONE))
             }
-            NodeKind::Retry(data) => self.run_retry(flow, node, data.times, data.backoff_ms, depth),
+            NodeKind::Retry(data) => self.run_retry(flow, node, data.times, data.backoff_ms),
             NodeKind::SetVar(data) => {
                 self.vars.insert(data.name.clone(), data.value.clone());
-                Ok(Outcome::Follow(handle::NEXT))
-            }
-            NodeKind::Call(data) => {
-                // `end` inside the callee only returns to this node.
-                self.run_flow(&data.flow, depth + 1)?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
         }
@@ -526,63 +573,64 @@ impl<'a> Interpreter<'a> {
 
     // ----------------------------------------------------------- primitives
 
-    fn jittered_click(&mut self, id: &str, name: &str, hit: &Hit, duration_ms: u32, jitter: &Jitter) -> RunResultOf<()> {
-        let delay_ms = random_delay_ms(jitter);
-        if delay_ms > 0.0 {
-            self.sleep(delay_ms)?;
-            self.check_deadline(id)?;
+    /// Click the matched box's anchor exactly, or, when `human` is set, the way a
+    /// hand would: a landing point scattered around the anchor, a curved mouse trip
+    /// from where the pointer is, a hesitation, and a jittered press (see `human`).
+    /// `dx`/`dy` in the log report where it landed.
+    fn click(&mut self, id: &str, name: &str, hit: &Hit, duration_ms: u32, human: bool, spread: f64) -> RunResultOf<()> {
+        let mut human_fields = serde_json::Map::new();
+        let point = if human {
+            let (point, plan) = {
+                let mut rng = rand::rng();
+                let point = human::human_point(&hit.rect, hit.point, spread, &mut rng);
+                let from = self.driver.pointer_position()?;
+                (point, human::plan_click(from, point, hit.rect.w.min(hit.rect.h), duration_ms, &mut rng))
+            };
+            self.play(&plan)?;
+            human_fields.insert("travelMs".into(), json!(round1(plan.travel_ms)));
+            human_fields.insert("holdMs".into(), json!(round1(plan.hold_ms)));
+            human_fields.insert("overshoot".into(), json!(plan.overshoot));
+            human_fields.insert("spread".into(), json!(human::clamp_spread(spread)));
+            point
+        } else {
+            self.driver.tap(hit.point.0, hit.point.1, duration_ms)?;
+            hit.point
+        };
+        let mut fields = json!({
+            "stepId": id,
+            "target": name,
+            "score": round3(hit.score),
+            "x": round2(point.0),
+            "y": round2(point.1),
+            "anchorX": round2(hit.point.0),
+            "anchorY": round2(hit.point.1),
+            "dx": round2(point.0 - hit.point.0),
+            "dy": round2(point.1 - hit.point.1),
+            "boxW": round1(hit.rect.w),
+            "boxH": round1(hit.rect.h),
+            "at": chrono::Local::now().format("%H:%M:%S").to_string(),
+            "strategy": hit.strategy,
+            "human": human,
+        });
+        if let Some(object) = fields.as_object_mut() {
+            object.extend(human_fields);
         }
-
-        let (dx, dy) = self.random_offset(jitter.offset_ratio, id);
-        let mut point = hit.point;
-        if (dx, dy) != (0.0, 0.0) {
-            point = clamp_to_rect(point.0 + dx * hit.rect.w, point.1 + dy * hit.rect.h, &hit.rect);
-        }
-        self.driver.tap(point.0, point.1, duration_ms)?;
-        self.reporter.log(
-            "info",
-            "tap",
-            json!({
-                "stepId": id,
-                "target": name,
-                "score": round3(hit.score),
-                "x": round2(point.0),
-                "y": round2(point.1),
-                "anchorX": round2(hit.point.0),
-                "anchorY": round2(hit.point.1),
-                "dx": round2(point.0 - hit.point.0),
-                "dy": round2(point.1 - hit.point.1),
-                "delayMs": delay_ms as i64,
-                "boxW": round1(hit.rect.w),
-                "boxH": round1(hit.rect.h),
-                "at": chrono::Local::now().format("%H:%M:%S").to_string(),
-                "strategy": hit.strategy,
-            }),
-        );
-        self.reporter.node(&self.current_flow.clone(), id, NodeState::Running, Some(hit.score), Some(point), None);
+        self.reporter.log("info", "tap", fields);
+        self.reporter.node(id, NodeState::Running, Some(hit.score), Some(point), None);
         self.record_action(id, Some(name))
-    }
-
-    /// Random offset as a fraction of the matched box. `0.2` picks a point
-    /// within ±20% of the box around the anchor; capped at half a box so the
-    /// click stays "inside the region".
-    fn random_offset(&mut self, ratio: f64, id: &str) -> (f64, f64) {
-        if ratio <= 0.0 || !ratio.is_finite() {
-            return (0.0, 0.0);
-        }
-        let mut ratio = ratio;
-        if ratio > 0.5 {
-            self.reporter.log("warn", "offset_clamped", json!({ "stepId": id, "requested": ratio, "used": 0.5 }));
-            ratio = 0.5;
-        }
-        let mut rng = rand::rng();
-        (rng.random_range(-ratio..=ratio), rng.random_range(-ratio..=ratio))
     }
 
     fn swipe(&mut self, id: &str, data: &SwipeData) -> RunResultOf<()> {
         let start = self.require(&data.from, id)?;
-        let end_point = match &data.to {
-            Some(to) => self.require(to, id)?.point,
+        let end_hit = match &data.to {
+            Some(to) => Some(self.require(to, id)?),
+            None => None,
+        };
+        if data.human {
+            return self.swipe_human(id, data, &start, end_hit.as_ref());
+        }
+        let end_point = match &end_hit {
+            Some(hit) => hit.point,
             None => {
                 let vector = data.vector.unwrap_or([0.0, -0.3]);
                 let bounds = self.driver.bounds()?;
@@ -593,6 +641,78 @@ impl<'a> Interpreter<'a> {
         self.record_action(id, Some(&data.from))
     }
 
+    /// A drag as a hand draws it: start and end scattered inside their boxes (or the
+    /// vector's end point jittered), approached with a curved mouse trip, stroked
+    /// along an arc with a bell-shaped speed over a jittered duration.
+    fn swipe_human(&mut self, id: &str, data: &SwipeData, start_hit: &Hit, end_hit: Option<&Hit>) -> RunResultOf<()> {
+        let surface = self.driver.bounds()?;
+        let (start, end, plan) = {
+            let mut rng = rand::rng();
+            let start = human::human_point(&start_hit.rect, start_hit.point, data.spread, &mut rng);
+            let end = match end_hit {
+                Some(hit) => human::human_point(&hit.rect, hit.point, data.spread, &mut rng),
+                None => {
+                    let vector = data.vector.unwrap_or([0.0, -0.3]);
+                    let nominal = (start.0 + vector[0] * surface.w, start.1 + vector[1] * surface.h);
+                    let jittered = human::jitter_drag_end(start, nominal, data.spread, &mut rng);
+                    // A drag that runs off the captured surface would press into whatever is outside it.
+                    (
+                        jittered.0.clamp(surface.x, surface.x + surface.w),
+                        jittered.1.clamp(surface.y, surface.y + surface.h),
+                    )
+                }
+            };
+            let from = self.driver.pointer_position()?;
+            let plan = human::plan_drag(from, start, start_hit.rect.w.min(start_hit.rect.h), end, data.duration_ms, &mut rng);
+            (start, end, plan)
+        };
+        self.play(&plan)?;
+        self.reporter.log(
+            "info",
+            "swipe",
+            json!({
+                "stepId": id,
+                "target": data.from,
+                "fromX": round2(start.0),
+                "fromY": round2(start.1),
+                "toX": round2(end.0),
+                "toY": round2(end.1),
+                "travelMs": round1(plan.travel_ms),
+                "strokeMs": round1(plan.hold_ms),
+                "human": true,
+                "spread": human::clamp_spread(data.spread),
+            }),
+        );
+        self.record_action(id, Some(&data.from))
+    }
+
+    /// Play a planned list of raw pointer events, honouring stop requests. If the
+    /// run is cut short while the button is down, the button is released first so
+    /// it is never left stuck.
+    fn play(&mut self, plan: &human::Plan) -> RunResultOf<()> {
+        self.driver.check_input(&plan.press_points())?;
+        let mut held: Option<(f64, f64)> = None;
+        for step in &plan.steps {
+            let sent = self.driver.pointer(step.action, step.x, step.y);
+            match step.action {
+                PointerAction::Down | PointerAction::Drag => held = Some((step.x, step.y)),
+                PointerAction::Up => held = None,
+                PointerAction::Move => {}
+            }
+            let paused = match sent {
+                Ok(()) => self.sleep(step.wait_ms),
+                Err(error) => Err(error.into()),
+            };
+            if let Err(error) = paused {
+                if let Some((x, y)) = held {
+                    let _ = self.driver.pointer(PointerAction::Up, x, y);
+                }
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
     fn wait_for(&mut self, id: &str, names: &[String], timeout_ms: u64, interval_ms: u64) -> RunResultOf<()> {
         if names.is_empty() {
             return Err(RunError::at(Reason::BadStep, "waitFor needs at least one target", id));
@@ -601,7 +721,6 @@ impl<'a> Interpreter<'a> {
         let interval = interval_ms.max(50) as f64;
         loop {
             self.check_stop()?;
-            self.check_deadline(id)?;
             self.invalidate();
             for name in names {
                 if self.find(name, id, true, true)?.is_some() {
@@ -620,7 +739,6 @@ impl<'a> Interpreter<'a> {
         let interval = interval_ms.max(50) as f64;
         loop {
             self.check_stop()?;
-            self.check_deadline(id)?;
             self.invalidate();
             if self.find(name, id, false, false)?.is_none() {
                 return Ok(());
@@ -638,7 +756,6 @@ impl<'a> Interpreter<'a> {
         let mut previous: Option<String> = None;
         loop {
             self.check_stop()?;
-            self.check_deadline(id)?;
             let frame = self.frame(true)?;
             let current = frame.hash().map_err(RunError::from)?.to_string();
             let now = Instant::now();
@@ -665,7 +782,6 @@ impl<'a> Interpreter<'a> {
         flow: &'a Flow,
         node: &'a Node,
         data: &'a liverguard_ir::LoopData,
-        depth: usize,
     ) -> RunResultOf<Option<Ended>> {
         let body = flow.next(&node.id, handle::BODY);
         let cap = data.max_iterations.unwrap_or(match data.mode {
@@ -676,7 +792,6 @@ impl<'a> Interpreter<'a> {
 
         loop {
             self.check_stop()?;
-            self.check_deadline(&node.id)?;
             let proceed = match data.mode {
                 LoopMode::Count => iterations < data.count,
                 LoopMode::Forever => true,
@@ -692,19 +807,19 @@ impl<'a> Interpreter<'a> {
                 return Ok(None);
             }
             iterations += 1;
-            if body.is_some() && self.run_chain(flow, body, depth)? == ChainEnd::Ended {
+            if body.is_some() && self.run_chain(flow, body)? == ChainEnd::Ended {
                 return Ok(Some(Ended));
             }
         }
     }
 
-    fn run_retry(&mut self, flow: &'a Flow, node: &'a Node, times: u32, backoff_ms: u64, depth: usize) -> RunResultOf<Outcome> {
+    fn run_retry(&mut self, flow: &'a Flow, node: &'a Node, times: u32, backoff_ms: u64) -> RunResultOf<Outcome> {
         let body = flow.next(&node.id, handle::BODY);
         let times = times.max(1);
         let mut last: Option<RunError> = None;
 
         for attempt in 0..times {
-            match self.run_chain(flow, body, depth) {
+            match self.run_chain(flow, body) {
                 Ok(ChainEnd::Ended) => return Ok(Outcome::End),
                 Ok(ChainEnd::Done) => return Ok(Outcome::Follow(handle::DONE)),
                 Err(error) => {
@@ -789,22 +904,10 @@ fn routed_handle(kind: &NodeKind, reason: Reason) -> Option<&'static str> {
     }
 }
 
-fn random_delay_ms(jitter: &Jitter) -> f64 {
-    let fixed = jitter.delay_ms.max(0.0);
-    match jitter.delay_range_ms {
-        Some([low, high]) => {
-            let low = low.max(0.0);
-            let high = high.max(low);
-            fixed + rand::rng().random_range(low..=high)
-        }
-        None => fixed,
-    }
-}
-
-/// Keeps a jittered point on the matched control; `dx`/`dy` in the log still
-/// report where it actually landed.
-fn clamp_to_rect(x: f64, y: f64, rect: &Rect) -> (f64, f64) {
-    (x.max(rect.x).min(rect.x + rect.w), y.max(rect.y).min(rect.y + rect.h))
+/// A uniformly random whole number of milliseconds in `min..=max` (a `max`
+/// below `min` is treated as `min`; validation reports it as an error).
+fn pick_sleep_ms(min: u64, max: u64) -> u64 {
+    rand::rng().random_range(min..=max.max(min))
 }
 
 fn as_number(value: &VarValue) -> Option<f64> {

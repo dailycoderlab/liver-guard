@@ -1,6 +1,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import { Plus, Trash2 } from 'lucide-react';
 import type { Condition } from '@/ir/model';
+import { setVarNames } from '@/ir/vars';
 import { useEditor } from '@/store/editor';
 import { TargetMulti, TargetSelect } from './TargetFields';
 import { Button, Input, Select } from './ui';
@@ -44,7 +45,7 @@ export function parseVarValue(text: string): boolean | number | string {
 }
 
 export function ConditionEditor({ value, onChange, depth = 0 }: { value: Condition | null | undefined; onChange: (next: Condition) => void; depth?: number }) {
-  const vars = useEditor(useShallow((s) => Object.keys(s.vars)));
+  const vars = useEditor(useShallow((s) => setVarNames(s.flow.nodes)));
   const cond = value ?? defaultCondition('visible');
   return (
     <div className={depth ? 'flex flex-col gap-2 rounded-md border border-line bg-canvas/50 p-2' : 'flex flex-col gap-2'}>

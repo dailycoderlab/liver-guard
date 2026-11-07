@@ -2,7 +2,10 @@ import { useShallow } from 'zustand/react/shallow';
 import { Trash2 } from 'lucide-react';
 import { NODE_SPECS } from '@/ir/catalog';
 import type { Condition } from '@/ir/model';
-import { selectFlow, useEditor } from '@/store/editor';
+import { msToSeconds, settleSleep, sleepPatch } from '@/ir/sleep';
+import { clampSpread, describeSpread, MAX_SPREAD, MIN_SPREAD } from '@/ir/spread';
+import { useEditor } from '@/store/editor';
+import { setVarNames } from '@/ir/vars';
 import { ConditionEditor, parseVarValue } from './ConditionEditor';
 import { TargetMulti, TargetSelect } from './TargetFields';
 import { Button, Empty, Field, Input, NumberInput, Section, Select, TextArea } from './ui';
@@ -11,16 +14,36 @@ type Params = Record<string, unknown>;
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' ? v : fallback);
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
+const sleepRange = (params: Params) => ({ minMs: num(params.minMs, 1000), maxMs: num(params.maxMs, 1000) });
+
+const HUMAN_HINT = '拟人：鼠标沿曲线移到目标，落点集中在锚点附近，按下时长随机（长按、滑动在设定时长上下浮动）；精确：直接点锚点';
+const SPREAD_HINT = `落点离锚点的散布程度，1 为推荐值：越小越集中在锚点，越大越分散到整个目标框（${MIN_SPREAD}～${MAX_SPREAD}）；始终落在匹配框内`;
+
+function SpreadField({ params, set }: { params: Params; set: (patch: Params) => void }) {
+  const spread = clampSpread(params.spread);
+  return (
+    <Field label={`分散度（${describeSpread(spread)}）`} hint={SPREAD_HINT}>
+      <NumberInput min={MIN_SPREAD} max={MAX_SPREAD} step={0.1} value={spread} onChange={(value) => set({ spread: Math.round(value * 100) / 100 })} />
+    </Field>
+  );
+}
+
+function HumanSelect({ value, onChange }: { value: boolean; onChange: (human: boolean) => void }) {
+  return (
+    <Select value={value ? 'human' : 'exact'} onChange={(e) => onChange(e.target.value === 'human')}>
+      <option value="exact">精确（直接点锚点）</option>
+      <option value="human">拟人（曲线移动、落点与时长随机）</option>
+    </Select>
+  );
+}
 
 export function Inspector() {
   const node = useEditor((s) => {
-    const selected = selectFlow(s).nodes.filter((n) => n.selected);
+    const selected = s.flow.nodes.filter((n) => n.selected);
     return selected.length === 1 ? selected[0] : null;
   });
-  const count = useEditor((s) => selectFlow(s).nodes.filter((n) => n.selected).length);
-  const flows = useEditor(useShallow((s) => Object.keys(s.flows)));
-  const vars = useEditor(useShallow((s) => Object.keys(s.vars)));
-  const activeFlow = useEditor((s) => s.activeFlow);
+  const count = useEditor((s) => s.flow.nodes.filter((n) => n.selected).length);
+  const vars = useEditor(useShallow((s) => setVarNames(s.flow.nodes)));
   const updateNode = useEditor((s) => s.updateNode);
   const deleteNode = useEditor((s) => s.deleteNode);
   const locked = useEditor((s) => s.runStatus !== 'idle');
@@ -30,6 +53,12 @@ export function Inspector() {
   const { kind, params } = node.data;
   const spec = NODE_SPECS[kind];
   const set = (patch: Params) => updateNode(node.id, { params: { ...params, ...patch } });
+  // Editing a sleep bound is over: if that left min > max, the bound just edited wins.
+  const settle = (edited: 'min' | 'max') => {
+    const range = sleepRange(params);
+    const next = settleSleep(range, edited);
+    if (next !== range) set(next);
+  };
 
   return (
     <fieldset disabled={locked} className="flex h-full min-w-0 flex-col overflow-y-auto border-0 p-0 disabled:opacity-60">
@@ -67,17 +96,16 @@ export function Inspector() {
               <Field label="目标">
                 <TargetSelect value={str(params.target)} onChange={(target) => set({ target })} />
               </Field>
-              <div className="grid grid-cols-2 gap-2">
+              <Field label="操作方式" hint={HUMAN_HINT}>
+                <HumanSelect value={!!params.human} onChange={(human) => set({ human })} />
+              </Field>
+              {/* A human click's press length is random around a built-in value; a long press still needs its own. */}
+              {!(kind === 'tap' && params.human) && (
                 <Field label={kind === 'tap' ? '按下时长 ms' : '长按时长 ms'}>
                   <NumberInput min={0} value={num(params.durationMs, 60)} onChange={(durationMs) => set({ durationMs })} />
                 </Field>
-                <Field label="点击前延迟 ms">
-                  <NumberInput min={0} value={num(params.delayMs, 0)} onChange={(delayMs) => set({ delayMs })} />
-                </Field>
-              </div>
-              <Field label="点位随机偏移" hint="0 = 精确点击锚点；0.2 = 在目标尺寸 20% 内随机">
-                <NumberInput min={0} max={1} step={0.05} value={num(params.offsetRatio, 0)} onChange={(offsetRatio) => set({ offsetRatio })} />
-              </Field>
+              )}
+              {!!params.human && <SpreadField params={params} set={set} />}
             </>
           )}
 
@@ -102,6 +130,10 @@ export function Inspector() {
               <Field label="滑动时长 ms">
                 <NumberInput min={0} value={num(params.durationMs, 300)} onChange={(durationMs) => set({ durationMs })} />
               </Field>
+              <Field label="操作方式" hint={HUMAN_HINT}>
+                <HumanSelect value={!!params.human} onChange={(human) => set({ human })} />
+              </Field>
+              {!!params.human && <SpreadField params={params} set={set} />}
             </>
           )}
 
@@ -135,9 +167,17 @@ export function Inspector() {
             </Field>
           )}
           {kind === 'sleep' && (
-            <Field label="等待 ms">
-              <NumberInput min={0} value={num(params.ms, 1000)} onChange={(ms) => set({ ms })} />
-            </Field>
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="最短等待 秒">
+                  <NumberInput min={0} step={0.1} value={msToSeconds(num(params.minMs, 1000))} onChange={(minSeconds) => set(sleepPatch(sleepRange(params), { minSeconds }))} onBlur={() => settle('min')} />
+                </Field>
+                <Field label="最长等待 秒">
+                  <NumberInput min={0} step={0.1} value={msToSeconds(num(params.maxMs, 1000))} onChange={(maxSeconds) => set(sleepPatch(sleepRange(params), { maxSeconds }))} onBlur={() => settle('max')} />
+                </Field>
+              </div>
+              <p className="text-[11px] text-mute/80">每次运行在范围内随机取一个值，精确到毫秒；两个值相同就是固定等待。</p>
+            </>
           )}
 
           {kind === 'waitFor' && (
@@ -227,18 +267,6 @@ export function Inspector() {
                 <Input value={String(params.value ?? '')} onChange={(e) => set({ value: parseVarValue(e.target.value) })} />
               </Field>
             </>
-          )}
-          {kind === 'call' && (
-            <Field label="要调用的流程" hint="被调用流程里的「结束」只返回这里">
-              <Select value={str(params.flow)} onChange={(e) => set({ flow: e.target.value })}>
-                <option value="">请选择流程</option>
-                {flows
-                  .filter((f) => f !== activeFlow)
-                  .map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-              </Select>
-            </Field>
           )}
         </Section>
       )}

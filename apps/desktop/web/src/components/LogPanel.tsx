@@ -80,7 +80,6 @@ function Logs() {
 
 function Problems() {
   const problems = useEditor((s) => s.problems);
-  const setActiveFlow = useEditor((s) => s.setActiveFlow);
   if (problems.length === 0) return <Empty>没有问题</Empty>;
   return (
     <ul className="h-full overflow-y-auto p-2">
@@ -89,23 +88,16 @@ function Problems() {
           key={i}
           className="flex cursor-pointer items-start gap-2 rounded px-2 py-1 hover:bg-raised"
           onClick={() => {
-            if (p.flow) setActiveFlow(p.flow);
             if (p.node) {
               const state = useEditor.getState();
-              const flow = state.flows[state.activeFlow];
-              useEditor.setState({ flows: { ...state.flows, [state.activeFlow]: { ...flow, nodes: flow.nodes.map((n) => ({ ...n, selected: n.id === p.node })) } } });
+              useEditor.setState({ flow: { ...state.flow, nodes: state.flow.nodes.map((n) => ({ ...n, selected: n.id === p.node })) } });
               useUi.getState().set({ rightTab: 'inspector' });
             }
           }}
         >
           {p.severity === 'error' ? <XCircle size={14} className="mt-0.5 shrink-0 text-red-400" /> : <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" />}
           <span className="flex-1">{p.message}</span>
-          {p.flow && (
-            <span className="shrink-0 font-mono text-[11px] text-mute">
-              {p.flow}
-              {p.node ? `/${p.node}` : ''}
-            </span>
-          )}
+          {p.node && <span className="shrink-0 font-mono text-[11px] text-mute">{p.node}</span>}
         </li>
       ))}
     </ul>

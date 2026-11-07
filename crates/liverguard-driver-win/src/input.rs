@@ -7,6 +7,8 @@
 use std::thread::sleep;
 use std::time::Duration;
 
+use windows::Win32::Foundation::POINT;
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
     MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK,
@@ -93,6 +95,21 @@ fn mouse(x: f64, y: f64, flags: windows::Win32::UI::Input::KeyboardAndMouse::MOU
 
 pub fn move_to(x: f64, y: f64) -> Result<()> {
     send(&[mouse(x, y, MOUSEEVENTF_MOVE)])
+}
+
+pub fn mouse_down(x: f64, y: f64) -> Result<()> {
+    send(&[mouse(x, y, MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN)])
+}
+
+pub fn mouse_up(x: f64, y: f64) -> Result<()> {
+    send(&[mouse(x, y, MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP)])
+}
+
+/// Where the cursor is now, in the physical pixels the other input functions use.
+pub fn cursor_position() -> Option<(f64, f64)> {
+    let mut point = POINT::default();
+    unsafe { GetCursorPos(&mut point).ok()? };
+    Some((point.x as f64, point.y as f64))
 }
 
 pub fn tap(x: f64, y: f64, duration_ms: u32) -> Result<()> {

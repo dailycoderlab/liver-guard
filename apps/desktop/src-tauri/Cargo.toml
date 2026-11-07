@@ -19,12 +19,14 @@ liverguard-ir.workspace = true
 liverguard-vision.workspace = true
 liverguard-engine.workspace = true
 liverguard-store.workspace = true
+liverguard-notify.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 opencv.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 liverguard-driver-mac.workspace = true

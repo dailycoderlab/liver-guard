@@ -2,10 +2,11 @@
 // UI screenshots). It keeps scripts in localStorage and fakes the screen with a
 // small synthetic scene; matching and input do not exist here.
 
-import { emptyDoc, type IrDoc, type IrFlow, type Problem, type Target } from '@/ir/model';
+import { emptyDoc, type IrDoc, type Problem, type Target } from '@/ir/model';
 import type {
   Backend,
   FramePacket,
+  NotifyConfig,
   PermissionInfo,
   ProbeRow,
   Rect,
@@ -20,6 +21,7 @@ import type {
 
 const STORE_KEY = 'liverguard.mock.scripts';
 const RUNS_KEY = 'liverguard.mock.runs';
+const NOTIFY_KEY = 'liverguard.mock.notify';
 const SCENE = { w: 960, h: 600 };
 
 function load<T>(key: string, fallback: T): T {
@@ -30,7 +32,8 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
-const scripts = (): ScriptRecord[] => load<ScriptRecord[]>(STORE_KEY, []);
+// Like the real store, skip records in an older IR shape (v2 had `flows`, no `flow`).
+const scripts = (): ScriptRecord[] => load<ScriptRecord[]>(STORE_KEY, []).filter((s) => s.ir?.flow);
 const saveScripts = (all: ScriptRecord[]) => localStorage.setItem(STORE_KEY, JSON.stringify(all));
 const newId = () => crypto.randomUUID().replaceAll('-', '');
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -107,20 +110,37 @@ function nextHandle(kind: string): string[] {
   }
 }
 
-async function simulate(ir: IrDoc, emit: (m: RunMessage) => void): Promise<RunMessage & { kind: 'done' }> {
+async function simulate(ir: IrDoc, repeat: number, emit: (m: RunMessage) => void): Promise<RunMessage & { kind: 'done' }> {
   const startedAt = Date.now();
   let steps = 0;
-  const flow: IrFlow | undefined = ir.flows[ir.entry];
   emit({ kind: 'log', level: 'info', event: 'run_start', payload: { script: ir.meta.name, mock: true } });
-  let node = flow?.nodes.find((n) => n.type === 'start');
+  const rounds = Math.max(1, Math.round(repeat) || 1);
+  for (let round = 1; round <= rounds && !stopFlag; round += 1) {
+    if (rounds > 1) emit({ kind: 'log', level: 'info', event: 'round_start', payload: { round, total: rounds } });
+    steps = await simulateRound(ir, emit, steps);
+  }
+  const state = stopFlag ? 'stopped' : 'done';
+  emit({ kind: 'log', level: 'info', event: state === 'done' ? 'run_done' : 'run_stopped', payload: { steps, rounds } });
+  return {
+    kind: 'done',
+    runId: newId(),
+    result: { state, stepCount: steps, errorCode: null, errorMsg: null, errorNode: null, startedAt, endedAt: Date.now() },
+  };
+}
+
+/** One walk from `start`; returns the running step total. */
+async function simulateRound(ir: IrDoc, emit: (m: RunMessage) => void, before: number): Promise<number> {
+  let steps = before;
+  const flow = ir.flow;
+  let node = flow.nodes.find((n) => n.type === 'start');
   const loops = new Map<string, number>();
-  while (node && !stopFlag && steps < 200) {
+  while (node && !stopFlag && steps - before < 200) {
     const current = node;
-    if (current.type !== 'start') emit({ kind: 'node', flow: ir.entry, nodeId: current.id, state: 'running' });
+    if (current.type !== 'start') emit({ kind: 'node', nodeId: current.id, state: 'running' });
     await sleep(current.type === 'start' ? 10 : 350);
     if (current.type === 'log') emit({ kind: 'log', level: String(current.data.level ?? 'info'), event: 'script_log', payload: { stepId: current.id, msg: current.data.msg } });
     if (current.type === 'tap') emit({ kind: 'log', level: 'info', event: 'tap', payload: { stepId: current.id, target: current.data.target, score: 0.93 } });
-    if (current.type !== 'start') emit({ kind: 'node', flow: ir.entry, nodeId: current.id, state: 'ok', score: current.type === 'tap' ? 0.93 : undefined });
+    if (current.type !== 'start') emit({ kind: 'node', nodeId: current.id, state: 'ok', score: current.type === 'tap' ? 0.93 : undefined });
     steps += 1;
     if (current.type === 'end') break;
 
@@ -134,13 +154,30 @@ async function simulate(ir: IrDoc, emit: (m: RunMessage) => void): Promise<RunMe
     const edge = flow.edges.find((e) => e.source === current.id && handles.includes(e.sourceHandle));
     node = edge ? flow.nodes.find((n) => n.id === edge.target) : undefined;
   }
-  const state = stopFlag ? 'stopped' : 'done';
-  emit({ kind: 'log', level: 'info', event: state === 'done' ? 'run_done' : 'run_stopped', payload: { steps } });
-  return {
-    kind: 'done',
-    runId: newId(),
-    result: { state, stepCount: steps, errorCode: null, errorMsg: null, errorNode: null, startedAt, endedAt: Date.now() },
-  };
+  return steps;
+}
+
+// ------------------------------------------------------------ import/export
+
+const BUNDLE_FORMAT = 'liverguard-script';
+
+const toBase64 = async (blob: Blob) => {
+  let text = '';
+  for (const byte of new Uint8Array(await blob.arrayBuffer())) text += String.fromCharCode(byte);
+  return btoa(text);
+};
+
+const fromBase64 = (text: string, type: string) => new Blob([Uint8Array.from(atob(text), (c) => c.charCodeAt(0))], { type });
+
+function pickJsonFile(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
 }
 
 // ------------------------------------------------------------------ backend
@@ -169,14 +206,69 @@ export const mockBackend: Backend = {
   async renameScript(id, name) {
     saveScripts(scripts().map((s) => (s.id === id ? { ...s, name, ir: { ...s.ir, meta: { ...s.ir.meta, name } } } : s)));
   },
+  async duplicateScript(id, name) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('脚本名称不能为空');
+    const found = scripts().find((s) => s.id === id);
+    if (!found) throw new Error('脚本不存在');
+    const record: ScriptRecord = { id: newId(), name: trimmed, ir: { ...structuredClone(found.ir), meta: { ...found.ir.meta, name: trimmed } } };
+    saveScripts([...scripts(), record]);
+    return record;
+  },
+  async exportScript(id) {
+    const found = scripts().find((s) => s.id === id);
+    if (!found) throw new Error('脚本不存在');
+    const bundleAssets: Record<string, string> = {};
+    for (const target of Object.values(found.ir.targets)) {
+      const blob = target.type === 'template' ? assets.get(target.asset) : undefined;
+      if (target.type === 'template' && blob) bundleAssets[target.asset] = await toBase64(blob);
+    }
+    const bundle = { format: BUNDLE_FORMAT, version: 1, name: found.name, ir: found.ir, assets: bundleAssets };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${found.name}.liverguard.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return link.download;
+  },
+  async importScript() {
+    const file = await pickJsonFile();
+    if (!file) return null;
+    let bundle: { format?: string; version?: number; name?: string; ir?: IrDoc; assets?: Record<string, string> };
+    try {
+      bundle = JSON.parse(await file.text());
+    } catch {
+      throw new Error('不是有效的脚本文件（无法解析为 JSON）');
+    }
+    if (bundle.format !== BUNDLE_FORMAT || !bundle.ir?.flow) throw new Error('不是 LiverGuard 导出的脚本文件');
+    for (const [sha, text] of Object.entries(bundle.assets ?? {})) assets.set(sha, fromBase64(text, 'image/png'));
+    const taken = new Set(scripts().map((s) => s.name));
+    const base = bundle.name?.trim() || '导入的脚本';
+    let name = base;
+    for (let n = 2; taken.has(name); n += 1) name = n === 2 ? `${base}（导入）` : `${base}（导入 ${n - 1}）`;
+    const record: ScriptRecord = { id: newId(), name, ir: { ...bundle.ir, meta: { ...bundle.ir.meta, name } } };
+    saveScripts([...scripts(), record]);
+    return record;
+  },
+  async getNotifyConfig() {
+    return load<NotifyConfig>(NOTIFY_KEY, { enabled: false, channel: 'dingtalk', url: '', secret: '', keyword: '', onLoopDone: true });
+  },
+  async saveNotifyConfig(config) {
+    if (config.enabled && !/^https?:\/\/\S+$/.test(config.url.trim())) throw new Error('Webhook 地址必须是 http:// 或 https:// 开头的链接');
+    localStorage.setItem(NOTIFY_KEY, JSON.stringify(config));
+  },
+  async sendTestNotification(config) {
+    if (!/^https?:\/\/\S+$/.test(config.url.trim())) throw new Error('请填写 Webhook 地址');
+    await sleep(400);
+    throw new Error('浏览器模拟后端不会真的发送；请在桌面应用里测试');
+  },
   async deleteScript(id) {
     saveScripts(scripts().filter((s) => s.id !== id));
   },
   async validate(ir): Promise<Problem[]> {
     const problems: Problem[] = [];
-    for (const [name, flow] of Object.entries(ir.flows)) {
-      if (!flow.nodes.some((n) => n.type === 'start')) problems.push({ severity: 'error', message: `flow "${name}" has no start node`, flow: name, node: null });
-    }
+    if (!ir.flow.nodes.some((n) => n.type === 'start')) problems.push({ severity: 'error', message: 'script has no start node', node: null });
     return problems;
   },
 
@@ -211,6 +303,17 @@ export const mockBackend: Backend = {
     };
   },
   snapshot: () => frame('image/png'),
+  async loadImage(image) {
+    const bitmap = await createImageBitmap(image);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    seq += 1;
+    lastCanvas = canvas;
+    return { seq, bounds: { x: 0, y: 0, w: canvas.width, h: canvas.height, scale: 1 }, image: await toBlob(canvas, 'image/png') };
+  },
   async detectCandidates(_seq, x, y): Promise<Rect[]> {
     const hit = BUTTONS.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
     const box = (cx: number, cy: number, w: number, h: number): Rect => ({ x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h });
@@ -218,6 +321,8 @@ export const mockBackend: Backend = {
     return [box(x, y, 80, 80), box(x, y, 140, 100)];
   },
   async createTemplate(_seq, rect): Promise<Target> {
+    const sceneW = lastCanvas?.width ?? SCENE.w;
+    const sceneH = lastCanvas?.height ?? SCENE.h;
     const crop = document.createElement('canvas');
     crop.width = Math.max(1, rect.w);
     crop.height = Math.max(1, rect.h);
@@ -229,12 +334,12 @@ export const mockBackend: Backend = {
       asset: sha,
       assetBox: { w: rect.w, h: rect.h },
       recordScale: 1,
-      recordWidth: SCENE.w,
-      roi: [Math.max(0, rect.x / SCENE.w - 0.1), Math.max(0, rect.y / SCENE.h - 0.1), Math.min(1, rect.w / SCENE.w + 0.2), Math.min(1, rect.h / SCENE.h + 0.2)],
+      recordWidth: sceneW,
+      roi: [Math.max(0, rect.x / sceneW - 0.1), Math.max(0, rect.y / sceneH - 0.1), Math.min(1, rect.w / sceneW + 0.2), Math.min(1, rect.h / sceneH + 0.2)],
       anchor: [0.5, 0.5],
       strategy: ['tpl', 'mstpl'],
       scale: { mode: 'auto', min: 0.7, max: 1.5, steps: 9 },
-      threshold: 0.82,
+      threshold: 0.85,
       warnThreshold: 0.7,
       verify: 'rgb',
       mask: 'none',
@@ -248,10 +353,10 @@ export const mockBackend: Backend = {
     return blob;
   },
 
-  async runStart(ir, _surface, onMessage) {
+  async runStart(ir, _surface, repeat, onMessage) {
     stopFlag = false;
     const id = newId();
-    simulate(ir, onMessage).then((done) => {
+    simulate(ir, repeat, onMessage).then((done) => {
       onMessage(done);
       const runs = load<RunSummary[]>(RUNS_KEY, []);
       localStorage.setItem(RUNS_KEY, JSON.stringify([{ id: done.runId, script: ir.meta.name, ...done.result }, ...runs].slice(0, 30)));
@@ -267,7 +372,7 @@ export const mockBackend: Backend = {
       found: true,
       ok: i % 3 !== 2,
       score: i % 3 !== 2 ? 0.95 - i * 0.01 : 0.55,
-      threshold: 0.82,
+      threshold: 0.85,
       rect: { x: 100, y: 100, w: 80, h: 40 },
       point: [140, 120],
       strategy: 'tpl',

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { backend } from '@/api';
 import { Canvas } from '@/components/Canvas';
 import { DialogHost } from '@/components/Dialogs';
-import { FlowTabs } from '@/components/FlowTabs';
+import { ImagePreviewHost } from '@/components/ImagePreview';
 import { Inspector } from '@/components/Inspector';
 import { LivePanel } from '@/components/LivePanel';
 import { LogPanel } from '@/components/LogPanel';
@@ -120,7 +120,6 @@ export function App() {
           <main className="flex min-w-0 flex-1 flex-col">
             {scriptId ? (
               <>
-                <FlowTabs />
                 <div className="min-h-0 flex-1">
                   <Canvas />
                 </div>
@@ -161,6 +160,7 @@ export function App() {
         <div className={cn('fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg border px-4 py-2 shadow-xl', toast.tone === 'error' ? 'border-red-500/60 bg-red-950 text-red-100' : 'border-line bg-raised text-ink')}>{toast.text}</div>
       )}
       <DialogHost />
+      <ImagePreviewHost />
     </PermissionGate>
   );
 }

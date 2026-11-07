@@ -3,8 +3,10 @@
 //! Everything platform independent lives here; a platform only supplies a
 //! [`Driver`].
 
+pub mod alert;
 pub mod driver;
 pub mod error;
+pub mod human;
 pub mod interp;
 pub mod report;
 pub mod testing;
@@ -12,7 +14,7 @@ pub mod testing;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-pub use driver::{Driver, DriverError, DriverResult};
+pub use driver::{Driver, DriverError, DriverResult, PointerAction};
 pub use error::{Reason, RunError};
 pub use interp::{Interpreter, RunResult, RunState};
 pub use report::{EventSink, LogLine, NodeState, Reporter, RunEvent};
@@ -40,6 +42,17 @@ pub fn prepare(ir: &IrDoc, assets: &mut AssetStore) -> Result<(), String> {
     Ok(())
 }
 
+/// What a caller can ask of a local run besides the script itself.
+#[derive(Default)]
+pub struct RunOptions {
+    /// Receives every run event as it happens.
+    pub sink: Option<EventSink>,
+    /// Walk the graph this many times (0 counts as 1; see `Interpreter::set_rounds`).
+    pub rounds: u32,
+    /// Webhook alert for an unhandled failure (see `Interpreter::set_alert`).
+    pub alert: Option<liverguard_notify::NotifyConfig>,
+}
+
 /// Run a script to completion on the calling thread.
 pub fn run_local(
     ir: &IrDoc,
@@ -47,14 +60,18 @@ pub fn run_local(
     mut assets: AssetStore,
     run_id: &str,
     stop: Arc<AtomicBool>,
-    sink: Option<EventSink>,
+    options: RunOptions,
 ) -> Result<(RunResult, Reporter), String> {
     prepare(ir, &mut assets)?;
     let mut reporter = Reporter::new(run_id);
-    if let Some(sink) = sink {
+    if let Some(sink) = options.sink {
         reporter.subscribe(sink);
     }
     let mut interpreter = Interpreter::new(ir, driver, Box::new(MatcherEngine::new(assets)), reporter, stop);
+    interpreter.set_rounds(options.rounds);
+    if let Some(alert) = options.alert {
+        interpreter.set_alert(alert);
+    }
     let result = interpreter.run();
     Ok((result, interpreter.into_reporter()))
 }

@@ -88,10 +88,6 @@ export type Node1 =
   | {
       data: SetVarData;
       type: 'setVar';
-    }
-  | {
-      data: CallData;
-      type: 'call';
     };
 /**
  * Branch condition. `visible` / `missing` look at the screen; the rest combine
@@ -176,17 +172,11 @@ export type ScaleMode = 'auto' | 'fixed';
 export type Verify = 'none' | 'rgb';
 
 export interface IrDoc {
-  entry?: string;
-  flows: {
-    [k: string]: Flow;
-  };
+  flow: Flow;
   irVersion?: number;
   meta: Meta;
   targets?: {
     [k: string]: Target;
-  };
-  vars?: {
-    [k: string]: VarValue;
   };
 }
 /**
@@ -221,53 +211,47 @@ export interface Pos {
  */
 export interface EmptyData {}
 /**
- * Random delay and offset shared by the click-like nodes.
- *
  * This interface was referenced by `IrDoc`'s JSON-Schema
  * via the `definition` "TapData".
  */
 export interface TapData {
-  /**
-   * Fixed wait before the input, milliseconds.
-   */
-  delayMs?: number;
-  /**
-   * `[low, high]` random wait added on top of `delay_ms`.
-   *
-   * @minItems 2
-   * @maxItems 2
-   */
-  delayRangeMs?: [number, number] | null;
   durationMs?: number;
   /**
-   * Maximum random offset as a fraction of the matched box (capped at 0.5).
+   * Act like a human hand instead of an exact injection: a point scattered around
+   * the anchor inside the matched box, a curved mouse trip to it, a hesitation and
+   * a jittered press length. Scripts saved with the old `randomPoint` flag read it
+   * as this one.
    */
-  offsetRatio?: number;
+  human?: boolean;
+  /**
+   * How widely a human landing point scatters, as a multiple of the standard
+   * spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+   * above 1 wanders further across the box. Only used when `human` is on, and
+   * kept within `MIN_SPREAD..=MAX_SPREAD`.
+   */
+  spread?: number;
   target: string;
 }
 /**
- * Random delay and offset shared by the click-like nodes.
- *
  * This interface was referenced by `IrDoc`'s JSON-Schema
  * via the `definition` "LongPressData".
  */
 export interface LongPressData {
-  /**
-   * Fixed wait before the input, milliseconds.
-   */
-  delayMs?: number;
-  /**
-   * `[low, high]` random wait added on top of `delay_ms`.
-   *
-   * @minItems 2
-   * @maxItems 2
-   */
-  delayRangeMs?: [number, number] | null;
   durationMs?: number;
   /**
-   * Maximum random offset as a fraction of the matched box (capped at 0.5).
+   * Act like a human hand instead of an exact injection: a point scattered around
+   * the anchor inside the matched box, a curved mouse trip to it, a hesitation and
+   * a jittered press length. Scripts saved with the old `randomPoint` flag read it
+   * as this one.
    */
-  offsetRatio?: number;
+  human?: boolean;
+  /**
+   * How widely a human landing point scatters, as a multiple of the standard
+   * spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+   * above 1 wanders further across the box. Only used when `human` is on, and
+   * kept within `MIN_SPREAD..=MAX_SPREAD`.
+   */
+  spread?: number;
   target: string;
 }
 /**
@@ -277,6 +261,19 @@ export interface LongPressData {
 export interface SwipeData {
   durationMs?: number;
   from: string;
+  /**
+   * Act like a human hand: start and end scattered inside their boxes (or the
+   * vector's end point jittered), a curved mouse trip to the start, and a curved
+   * stroke over a jittered duration.
+   */
+  human?: boolean;
+  /**
+   * How widely a human landing points (and a vector end's jitter) scatter, as a multiple of the standard
+   * spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+   * above 1 wanders further across the box. Only used when `human` is on, and
+   * kept within `MIN_SPREAD..=MAX_SPREAD`.
+   */
+  spread?: number;
   to?: string | null;
   /**
    * Relative drag `[dx, dy]` in fractions of the surface when `to` is absent.
@@ -320,7 +317,15 @@ export interface SnapshotData {
  * via the `definition` "SleepData".
  */
 export interface SleepData {
-  ms: number;
+  /**
+   * Longest wait, milliseconds. Must not be below `min_ms`.
+   */
+  maxMs?: number;
+  /**
+   * Shortest wait, milliseconds. The run waits a random whole number of
+   * milliseconds in `min_ms..=max_ms`; equal bounds make a fixed wait.
+   */
+  minMs?: number;
 }
 /**
  * This interface was referenced by `IrDoc`'s JSON-Schema
@@ -405,18 +410,10 @@ export interface SetVarData {
 }
 /**
  * This interface was referenced by `IrDoc`'s JSON-Schema
- * via the `definition` "CallData".
- */
-export interface CallData {
-  flow: string;
-}
-/**
- * This interface was referenced by `IrDoc`'s JSON-Schema
  * via the `definition` "Meta".
  */
 export interface Meta {
   game?: string | null;
-  maxDurationMs?: number;
   minEngine?: string | null;
   name: string;
 }

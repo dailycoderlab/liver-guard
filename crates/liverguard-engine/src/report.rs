@@ -27,7 +27,6 @@ pub enum RunEvent {
     Log { level: String, event: String, payload: Value },
     #[serde(rename_all = "camelCase")]
     Node {
-        flow: String,
         node_id: String,
         state: NodeState,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,8 +133,8 @@ impl Reporter {
         }
     }
 
-    pub fn node(&self, flow: &str, node_id: &str, state: NodeState, score: Option<f64>, point: Option<(f64, f64)>, message: Option<String>) {
-        self.emit(RunEvent::Node { flow: flow.to_string(), node_id: node_id.to_string(), state, score, point, message });
+    pub fn node(&self, node_id: &str, state: NodeState, score: Option<f64>, point: Option<(f64, f64)>, message: Option<String>) {
+        self.emit(RunEvent::Node { node_id: node_id.to_string(), state, score, point, message });
     }
 
     pub fn score(&mut self, step_id: &str, target_id: &str, score: f64, ms: f64) {

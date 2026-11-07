@@ -8,7 +8,7 @@ use liverguard_ir::geometry::py_round;
 use liverguard_ir::{AssetBox, Bounds, Rect, Target, TemplateTarget};
 use liverguard_vision::{AssetStore, Frame, Hit, Resolver};
 
-use crate::driver::{Driver, DriverResult};
+use crate::driver::{Driver, DriverError, DriverResult, PointerAction};
 
 pub const BUTTON_CENTER: (f64, f64) = (300.0, 220.0);
 pub const BUTTON_SIZE: (f64, f64) = (120.0, 56.0);
@@ -119,6 +119,15 @@ pub struct FakeDriver {
     bounds: Bounds,
     pub taps: Vec<(f64, f64, u32)>,
     pub swipes: Vec<(f64, f64, f64, f64)>,
+    /// Raw pointer events from human-like input, in order.
+    pub pointer_events: Vec<(PointerAction, f64, f64)>,
+    /// Where the pointer "is": set it to start a human-like move from there; it
+    /// follows every raw event. `None` means the platform cannot tell.
+    pub pointer_at: Option<(f64, f64)>,
+    /// The points passed to each `check_input` call.
+    pub input_checks: Vec<Vec<(f64, f64)>>,
+    /// Make the next raw pointer event with this action fail.
+    pub fail_pointer_on: Option<PointerAction>,
     pub keys: Vec<String>,
     pub texts: Vec<String>,
     pub captures: u32,
@@ -133,6 +142,10 @@ impl FakeDriver {
             bounds: frame.bounds,
             taps: vec![],
             swipes: vec![],
+            pointer_events: vec![],
+            pointer_at: None,
+            input_checks: vec![],
+            fail_pointer_on: None,
             keys: vec![],
             texts: vec![],
             captures: 0,
@@ -168,6 +181,24 @@ impl Driver for FakeDriver {
 
     fn swipe(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, _duration_ms: u32) -> DriverResult<()> {
         self.swipes.push((x1, y1, x2, y2));
+        Ok(())
+    }
+
+    fn pointer(&mut self, action: PointerAction, x: f64, y: f64) -> DriverResult<()> {
+        if self.fail_pointer_on == Some(action) {
+            return Err(DriverError::failed("injected pointer failure"));
+        }
+        self.pointer_events.push((action, x, y));
+        self.pointer_at = Some((x, y));
+        Ok(())
+    }
+
+    fn pointer_position(&mut self) -> DriverResult<Option<(f64, f64)>> {
+        Ok(self.pointer_at)
+    }
+
+    fn check_input(&mut self, points: &[(f64, f64)]) -> DriverResult<()> {
+        self.input_checks.push(points.to_vec());
         Ok(())
     }
 
@@ -228,7 +259,7 @@ impl Resolver for FixedResolver {
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use liverguard_ir::{Edge, Flow, IrDoc, Node, NodeKind};
+use liverguard_ir::{Edge, IrDoc, Node, NodeKind};
 
 /// Per-target visibility, shared with the test so it can flip things mid-run.
 #[derive(Clone, Default)]
@@ -297,59 +328,35 @@ impl Resolver for ScreenResolver {
     }
 }
 
-/// A template with default thresholds (0.82 / 0.7). The `Screen` resolver never
+/// A template with default thresholds (0.85 / 0.7). The `Screen` resolver never
 /// reads its pixels; it only needs to exist so the graph validates.
 pub fn stub_target() -> Target {
     Target::Template(TemplateTarget::new("0".repeat(64), AssetBox { w: 40.0, h: 20.0 }, [0.0, 0.0, 1.0, 1.0]))
 }
 
-/// Fluent construction of one-flow documents.
+/// Fluent construction of test documents.
 pub struct GraphBuilder {
     doc: IrDoc,
-    flow: String,
 }
 
 impl GraphBuilder {
-    /// A document whose `main` flow already holds `start`, with every name in
+    /// A document whose graph already holds `start`, with every name in
     /// `targets` registered as a stub target.
     pub fn new(targets: &[&str]) -> Self {
         let mut doc = IrDoc::empty("test");
         for name in targets {
             doc.targets.insert((*name).into(), stub_target());
         }
-        Self { doc, flow: "main".into() }
-    }
-
-    /// Switch to (and create) another flow, with its own `start`.
-    pub fn flow(mut self, name: &str) -> Self {
-        let mut fresh = IrDoc::empty("x");
-        let start = fresh.flows.remove("main").unwrap();
-        self.doc.flows.entry(name.into()).or_insert(start);
-        self.flow = name.into();
-        self
-    }
-
-    pub fn var(mut self, name: &str, value: liverguard_ir::VarValue) -> Self {
-        self.doc.vars.insert(name.into(), value);
-        self
-    }
-
-    pub fn max_duration(mut self, ms: u64) -> Self {
-        self.doc.meta.max_duration_ms = ms;
-        self
-    }
-
-    fn current(&mut self) -> &mut Flow {
-        self.doc.flows.get_mut(&self.flow).unwrap()
+        Self { doc }
     }
 
     pub fn node(mut self, id: &str, kind: NodeKind) -> Self {
-        self.current().nodes.push(Node { id: id.into(), pos: Default::default(), label: None, max_visits: None, kind });
+        self.doc.flow.nodes.push(Node { id: id.into(), pos: Default::default(), label: None, max_visits: None, kind });
         self
     }
 
     pub fn node_with_visits(mut self, id: &str, kind: NodeKind, max_visits: u32) -> Self {
-        self.current().nodes.push(Node {
+        self.doc.flow.nodes.push(Node {
             id: id.into(),
             pos: Default::default(),
             label: None,
@@ -360,7 +367,7 @@ impl GraphBuilder {
     }
 
     pub fn wire(mut self, source: &str, handle: &str, target: &str) -> Self {
-        let flow = self.current();
+        let flow = &mut self.doc.flow;
         let id = format!("e{}", flow.edges.len());
         flow.edges.push(Edge {
             id,

@@ -131,7 +131,7 @@ fn default_strategy() -> Vec<Strategy> {
 }
 
 fn default_threshold() -> f64 {
-    0.82
+    0.85
 }
 
 fn default_warn_threshold() -> f64 {

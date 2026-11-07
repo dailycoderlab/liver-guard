@@ -53,26 +53,24 @@ pub enum Condition {
     Any { conds: Vec<Condition> },
 }
 
-/// Random delay and offset shared by the click-like nodes.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Jitter {
-    /// Fixed wait before the input, milliseconds.
-    pub delay_ms: f64,
-    /// `[low, high]` random wait added on top of `delay_ms`.
-    pub delay_range_ms: Option<[f64; 2]>,
-    /// Maximum random offset as a fraction of the matched box (capped at 0.5).
-    pub offset_ratio: f64,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TapData {
     pub target: String,
     #[serde(default = "tap_duration")]
     pub duration_ms: u32,
-    #[serde(flatten)]
-    pub jitter: Jitter,
+    /// Act like a human hand instead of an exact injection: a point scattered around
+    /// the anchor inside the matched box, a curved mouse trip to it, a hesitation and
+    /// a jittered press length. Scripts saved with the old `randomPoint` flag read it
+    /// as this one.
+    #[serde(default, alias = "randomPoint")]
+    pub human: bool,
+    /// How widely a human landing point scatters, as a multiple of the standard
+    /// spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+    /// above 1 wanders further across the box. Only used when `human` is on, and
+    /// kept within `MIN_SPREAD..=MAX_SPREAD`.
+    #[serde(default = "default_spread")]
+    pub spread: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -81,8 +79,18 @@ pub struct LongPressData {
     pub target: String,
     #[serde(default = "long_press_duration")]
     pub duration_ms: u32,
-    #[serde(flatten)]
-    pub jitter: Jitter,
+    /// Act like a human hand instead of an exact injection: a point scattered around
+    /// the anchor inside the matched box, a curved mouse trip to it, a hesitation and
+    /// a jittered press length. Scripts saved with the old `randomPoint` flag read it
+    /// as this one.
+    #[serde(default, alias = "randomPoint")]
+    pub human: bool,
+    /// How widely a human landing point scatters, as a multiple of the standard
+    /// spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+    /// above 1 wanders further across the box. Only used when `human` is on, and
+    /// kept within `MIN_SPREAD..=MAX_SPREAD`.
+    #[serde(default = "default_spread")]
+    pub spread: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -96,6 +104,17 @@ pub struct SwipeData {
     pub vector: Option<[f64; 2]>,
     #[serde(default = "swipe_duration")]
     pub duration_ms: u32,
+    /// Act like a human hand: start and end scattered inside their boxes (or the
+    /// vector's end point jittered), a curved mouse trip to the start, and a curved
+    /// stroke over a jittered duration.
+    #[serde(default)]
+    pub human: bool,
+    /// How widely a human landing points (and a vector end's jitter) scatter, as a multiple of the standard
+    /// spread (1.0, `DEFAULT_SPREAD`): below 1 clusters tighter around the anchor,
+    /// above 1 wanders further across the box. Only used when `human` is on, and
+    /// kept within `MIN_SPREAD..=MAX_SPREAD`.
+    #[serde(default = "default_spread")]
+    pub spread: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -123,8 +142,15 @@ pub struct SnapshotData {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SleepData {
-    pub ms: u64,
+    /// Shortest wait, milliseconds. The run waits a random whole number of
+    /// milliseconds in `min_ms..=max_ms`; equal bounds make a fixed wait.
+    #[serde(default = "one_second")]
+    pub min_ms: u64,
+    /// Longest wait, milliseconds. Must not be below `min_ms`.
+    #[serde(default = "one_second")]
+    pub max_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -208,11 +234,6 @@ pub struct SetVarData {
     pub value: VarValue,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct CallData {
-    pub flow: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct EmptyData {}
 
@@ -237,7 +258,6 @@ pub enum NodeKind {
     Loop(LoopData),
     Retry(RetryData),
     SetVar(SetVarData),
-    Call(CallData),
 }
 
 /// Handle names. Kept as constants so the engine, validator and editor agree.
@@ -277,7 +297,6 @@ impl NodeKind {
             NodeKind::Loop(_) => "loop",
             NodeKind::Retry(_) => "retry",
             NodeKind::SetVar(_) => "setVar",
-            NodeKind::Call(_) => "call",
         }
     }
 
@@ -378,6 +397,14 @@ pub struct Edge {
     pub target_handle: Option<String>,
 }
 
+/// Standard spread of a human landing point: `sigma = box size / 4.133` (Fitts).
+pub const DEFAULT_SPREAD: f64 = 1.0;
+pub const MIN_SPREAD: f64 = 0.3;
+pub const MAX_SPREAD: f64 = 2.0;
+
+fn default_spread() -> f64 {
+    DEFAULT_SPREAD
+}
 fn tap_duration() -> u32 {
     60
 }
@@ -392,6 +419,9 @@ fn info() -> String {
 }
 fn snap() -> String {
     "snap".to_string()
+}
+fn one_second() -> u64 {
+    1_000
 }
 fn ten_seconds() -> u64 {
     10_000
