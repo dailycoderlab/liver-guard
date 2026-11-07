@@ -66,6 +66,12 @@ struct Gpu {
     winrt: IDirect3DDevice,
 }
 
+// The windows crate does not mark COM interfaces `Send`, but the `Driver` trait needs it.
+// A D3D11 device is free-threaded and the WinRT device wrapper is agile; the immediate
+// context is not thread-safe, which is fine because the capturer is only ever used by one
+// thread at a time (`&mut self`) and is never used concurrently.
+unsafe impl Send for Gpu {}
+
 fn create_gpu() -> WinResult<Gpu> {
     unsafe {
         let mut device = None;

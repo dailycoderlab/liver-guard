@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use opencv::core::{Mat, MatTraitConst, Scalar, CV_8UC4};
+use opencv::core::{Mat, MatTraitManual, Scalar, CV_8UC4};
 use opencv::imgproc;
 use liverguard_engine::{Driver, DriverError, DriverResult, PointerAction};
 use liverguard_ir::{Bounds, Rect};

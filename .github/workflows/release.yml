@@ -32,14 +32,14 @@ jobs:
   # twenty minutes of macOS runner time.
   web:
     name: Web checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -79,12 +79,12 @@ jobs:
             bundles: nsis
             installers: target/release/bundle/nsis/*.exe
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -115,7 +115,7 @@ jobs:
           arch: x64
 
       - name: Cache OpenCV
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .opencv-prefix
           key: opencv-${{ matrix.name }}-${{ hashFiles('scripts/ci/build-opencv.sh') }}
@@ -158,7 +158,7 @@ jobs:
         shell: bash
         run: ls -lh ${{ matrix.installers }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: liverguard-${{ matrix.name }}
           path: ${{ matrix.installers }}
@@ -169,13 +169,13 @@ jobs:
     name: Draft GitHub Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: liverguard-*
           path: dist
