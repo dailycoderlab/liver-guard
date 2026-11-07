@@ -42,7 +42,7 @@ export async function requireSurface(): Promise<Surface | null> {
   const { surface, setSurface } = useEditor.getState();
   const notify = useUi.getState().notify;
   if (!surface) {
-    notify('请先在顶部选择运行画面（整个屏幕或某个窗口）', 'error');
+    notify('请先在顶部选择运行窗口（整个屏幕或某个应用窗口）', 'error');
     flashSurfacePicker();
     return null;
   }

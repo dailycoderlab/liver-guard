@@ -29,8 +29,8 @@ export function SurfacePicker() {
   const known = surface?.kind !== 'window' || windows.some((w) => w.number === surface.number);
 
   return (
-    <div className="flex items-center gap-1" title="脚本在哪个画面上截图、匹配和点击。预览、探测、运行都用它，运行前必须先选">
-      <span className="whitespace-nowrap text-xs text-mute">画面</span>
+    <div className="flex items-center gap-1" title="脚本在哪个窗口上截图、匹配和点击。预览、探测、运行都用它，运行前必须先选">
+      <span className="whitespace-nowrap text-xs text-mute">窗口</span>
       <Select
         className={`h-8 w-44 ${attention ? 'border-red-400 ring-2 ring-red-400/40' : ''} ${value === '' ? 'text-mute' : ''}`}
         value={value}
@@ -38,7 +38,7 @@ export function SurfacePicker() {
         onChange={(e) => setSurface(parseSurface(e.target.value))}
       >
         <option value="" disabled>
-          请选择运行画面…
+          请选择运行窗口…
         </option>
         <option value="full">整个屏幕</option>
         {windows.map((w) => (

@@ -53,6 +53,7 @@ export function TopBar() {
       </Button>
 
       <div className="mx-1 h-5 w-px bg-line" />
+      <SurfacePicker />
       <Button variant="ghost" disabled={!open} onClick={validateNow} title="校验脚本">
         <ShieldCheck size={15} /> 校验
       </Button>
@@ -65,7 +66,6 @@ export function TopBar() {
           <Save size={14} /> 保存
         </Button>
         <div className="mx-1 h-5 w-px bg-line" />
-        <SurfacePicker />
         <RunControls />
       </div>
       <NotifyDialog open={notifySettings} onOpenChange={setNotifySettings} onSaved={(c) => setNotifyOn(c.enabled)} />

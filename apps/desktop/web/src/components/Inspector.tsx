@@ -2,7 +2,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Trash2 } from 'lucide-react';
 import { NODE_SPECS } from '@/ir/catalog';
 import type { Condition } from '@/ir/model';
-import { msToSeconds, settleSleep, sleepPatch } from '@/ir/sleep';
+import { msToSeconds, secondsToMs, settleSleep, sleepPatch } from '@/ir/sleep';
 import { clampSpread, describeSpread, MAX_SPREAD, MIN_SPREAD } from '@/ir/spread';
 import { useEditor } from '@/store/editor';
 import { setVarNames } from '@/ir/vars';
@@ -18,6 +18,11 @@ const sleepRange = (params: Params) => ({ minMs: num(params.minMs, 1000), maxMs:
 
 const HUMAN_HINT = '拟人：鼠标沿曲线移到目标，落点集中在锚点附近，按下时长随机（长按、滑动在设定时长上下浮动）；精确：直接点锚点';
 const SPREAD_HINT = `落点离锚点的散布程度，1 为推荐值：越小越集中在锚点，越大越分散到整个目标框（${MIN_SPREAD}～${MAX_SPREAD}）；始终落在匹配框内`;
+
+/** A duration stored in milliseconds, shown and typed in seconds. */
+function SecondsInput({ valueMs, onChange, min = 0, step = 0.1 }: { valueMs: number; onChange: (ms: number) => void; min?: number; step?: number }) {
+  return <NumberInput min={min} step={step} value={msToSeconds(valueMs)} onChange={(seconds) => onChange(secondsToMs(seconds))} />;
+}
 
 function SpreadField({ params, set }: { params: Params; set: (patch: Params) => void }) {
   const spread = clampSpread(params.spread);
@@ -101,8 +106,8 @@ export function Inspector() {
               </Field>
               {/* A human click's press length is random around a built-in value; a long press still needs its own. */}
               {!(kind === 'tap' && params.human) && (
-                <Field label={kind === 'tap' ? '按下时长 ms' : '长按时长 ms'}>
-                  <NumberInput min={0} value={num(params.durationMs, 60)} onChange={(durationMs) => set({ durationMs })} />
+                <Field label={kind === 'tap' ? '按下时长（秒）' : '长按时长（秒）'}>
+                  <SecondsInput step={0.05} valueMs={num(params.durationMs, kind === 'tap' ? 60 : 600)} onChange={(durationMs) => set({ durationMs })} />
                 </Field>
               )}
               {!!params.human && <SpreadField params={params} set={set} />}
@@ -127,8 +132,8 @@ export function Inspector() {
                   </Field>
                 </div>
               )}
-              <Field label="滑动时长 ms">
-                <NumberInput min={0} value={num(params.durationMs, 300)} onChange={(durationMs) => set({ durationMs })} />
+              <Field label="滑动时长（秒）">
+                <SecondsInput step={0.05} valueMs={num(params.durationMs, 300)} onChange={(durationMs) => set({ durationMs })} />
               </Field>
               <Field label="操作方式" hint={HUMAN_HINT}>
                 <HumanSelect value={!!params.human} onChange={(human) => set({ human })} />
@@ -198,11 +203,11 @@ export function Inspector() {
           )}
           {kind === 'waitStable' && (
             <div className="grid grid-cols-2 gap-2">
-              <Field label="需保持不变 ms">
-                <NumberInput min={0} value={num(params.ms, 400)} onChange={(ms) => set({ ms })} />
+              <Field label="需保持不变（秒）">
+                <SecondsInput valueMs={num(params.ms, 400)} onChange={(ms) => set({ ms })} />
               </Field>
-              <Field label="超时 ms">
-                <NumberInput min={0} value={num(params.timeoutMs, 5000)} onChange={(timeoutMs) => set({ timeoutMs })} />
+              <Field label="超时（秒）">
+                <SecondsInput valueMs={num(params.timeoutMs, 5000)} onChange={(timeoutMs) => set({ timeoutMs })} />
               </Field>
             </div>
           )}
@@ -248,8 +253,8 @@ export function Inspector() {
               <Field label="最多次数">
                 <NumberInput min={1} value={num(params.times, 3)} onChange={(times) => set({ times: Math.max(1, Math.round(times)) })} />
               </Field>
-              <Field label="间隔 ms">
-                <NumberInput min={0} value={num(params.backoffMs, 500)} onChange={(backoffMs) => set({ backoffMs })} />
+              <Field label="间隔（秒）">
+                <SecondsInput valueMs={num(params.backoffMs, 500)} onChange={(backoffMs) => set({ backoffMs })} />
               </Field>
             </div>
           )}
@@ -277,11 +282,11 @@ export function Inspector() {
 function TimingFields({ params, set }: { params: Params; set: (patch: Params) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <Field label="超时 ms">
-        <NumberInput min={0} value={num(params.timeoutMs, 10000)} onChange={(timeoutMs) => set({ timeoutMs })} />
+      <Field label="超时（秒）">
+        <SecondsInput valueMs={num(params.timeoutMs, 10000)} onChange={(timeoutMs) => set({ timeoutMs })} />
       </Field>
-      <Field label="检测间隔 ms">
-        <NumberInput min={50} value={num(params.intervalMs, 500)} onChange={(intervalMs) => set({ intervalMs })} />
+      <Field label="检测间隔（秒）">
+        <SecondsInput min={0.05} valueMs={num(params.intervalMs, 500)} onChange={(intervalMs) => set({ intervalMs })} />
       </Field>
     </div>
   );
