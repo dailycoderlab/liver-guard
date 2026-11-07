@@ -19,6 +19,7 @@ LiverGuard（中文名「护肝」）是纯本地的桌面自动化工具：用�
 | `crates/liverguard-cli` | 命令行 `liverguard`，与桌面应用共用核心 |
 | `apps/desktop/src-tauri` | Tauri 外壳，只做命令转发 |
 | `apps/desktop/web` | 画布前端 |
+| `.github/workflows/release.yml`、`scripts/ci/` | GitHub Actions 打包发布（macOS arm64 + Windows x64）与 OpenCV 构建脚本，说明见 README「持续集成与发布」；`v*` 标签要与三处版本号一致（`node scripts/ci/check-version.mjs vX.Y.Z`） |
 
 分层规则：匹配、等待、分支、重试、报告只能写在 `liverguard-engine` / `liverguard-vision`；平台差异只能出现在 `liverguard-driver-*`、`src-tauri/src/platform.rs`、`liverguard-cli/src/platform.rs` 三处，不要在其他地方写 `cfg(target_os)`。
 

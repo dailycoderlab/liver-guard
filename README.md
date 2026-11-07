@@ -42,7 +42,7 @@ cd ..
 
 ### OpenCV 构建环境
 
-Rust 的 `opencv` crate 在编译期需要找到 OpenCV 头文件和 libclang。本项目开发机用的是自行编译的最小静态 OpenCV 4.12（只含 `core`、`imgproc`、`imgcodecs`、`features2d`、`calib3d`、`flann`），通过 `OpenCV_DIR`、`CMAKE_PREFIX_PATH` 指向它；这一步没有脚本化，换机器需要自行准备。`.cargo/config.toml` 已为 macOS 加上 Command Line Tools 的 rpath，避免 `tauri dev` 经 node 启动 cargo 时丢失 `DYLD_*` 变量（SIP）而找不到 `libclang.dylib`。
+Rust 的 `opencv` crate 在编译期需要找到 OpenCV 头文件和 libclang。本项目开发机用的是自行编译的最小静态 OpenCV 4.12（只含 `core`、`imgproc`、`imgcodecs`、`features2d`、`calib3d`、`flann`），通过 `OpenCV_DIR`、`CMAKE_PREFIX_PATH` 指向它。换机器可以用 `scripts/ci/build-opencv.sh <安装目录>` 从官方源码包（校验 SHA-256）重新编译同样的配置，它会打印要设置的环境变量；CI 用的就是这个脚本（macOS 与 Windows 的 Git Bash，Windows 还需要先加载 MSVC 环境）。`.cargo/config.toml` 已为 macOS 加上 Command Line Tools 的 rpath，避免 `tauri dev` 经 node 启动 cargo 时丢失 `DYLD_*` 变量（SIP）而找不到 `libclang.dylib`。
 
 ## 命令行
 
@@ -135,9 +135,13 @@ cd apps/desktop
 上面这条命令的产物是 ad-hoc 签名：macOS 按二进制哈希认应用，**每次重新打包都会被当成新应用，屏幕录制 / 辅助功能的授权随之失效**。本机反复打包调试时用：
 
 ```sh
+cd /Users/advancer-sunkai/Documents/workspace/code/sky/liverguard   # 仓库根目录，换机器时改成自己的路径
+source /tmp/ocvenv.sh             # 先加载 OpenCV 环境，不加载编译会找不到 OpenCV（文件不存在时见 AGENTS.md 重建）
 scripts/mac-dev-build.sh          # 首次会在登录钥匙串里创建自签名证书 "LiverGuard Dev"，之后用它给每次打包签名
 scripts/mac-dev-build.sh setup    # 只创建证书，不打包
 ```
+
+本机开发测试的日常流程就是前三行：进仓库、加载 OpenCV 环境、跑 `scripts/mac-dev-build.sh`，产物在 `target/release/bundle/macos/LiverGuard.app`。
 
 签名身份变成「`com.sky.liverguard` + 这张证书」，重新打包后不变，授权一次即可保留。脚本结束时会打印 `designated =>` 一行，里面不应出现 `cdhash`。切换到这张证书后的第一次仍要重新授权；旧的 “LiverGuard” 条目可以在系统设置里删掉，或执行 `tccutil reset ScreenCapture com.sky.liverguard`、`tccutil reset Accessibility com.sky.liverguard`。用 `LIVERGUARD_SIGN_IDENTITY` 可以换证书名。这是自签名，只适合本机；产物不会被公证，别人电脑上 Gatekeeper 仍会拦截。**未验证**：多次重新打包后授权确实保留，需要在真机上连续打包两次确认。
 
@@ -145,3 +149,30 @@ scripts/mac-dev-build.sh setup    # 只创建证书，不打包
 
 - macOS：Developer ID 签名、`notarytool` 公证、装订（`stapler`）。`src-tauri/entitlements.plist` 已按 hardened runtime 准备，不需要额外 entitlement。设置 `APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 后 `tauri build` 会自动签名并公证。
 - Windows：代码签名证书（`bundle.windows.certificateThumbprint`）；WebView2 运行时在 Windows 11 自带，Windows 10 需要随安装包引导安装。
+
+## 持续集成与发布
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-14`）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：没有 Intel Mac、Windows ARM 的包。
+
+| 触发 | 结果 |
+| --- | --- |
+| 推送 `v*` 标签 | 先检查标签与版本号一致，再打两个平台的包，最后在 Releases 里创建**草稿**（含 `SHA256SUMS.txt` 和安装说明），确认后手动 Publish |
+| Actions 页面手动运行（Run workflow） | 只构建，安装包留在该次运行的 Artifacts 里，保留 14 天，不创建 Release |
+
+发版步骤：
+
+```sh
+# 1. 同步改这三处版本号：apps/desktop/src-tauri/tauri.conf.json、根 Cargo.toml 的 [workspace.package]、apps/desktop/web/package.json
+node scripts/ci/check-version.mjs v0.2.1   # 本地先自检（版本号一致才通过）
+git tag v0.2.1 && git push origin v0.2.1
+```
+
+产物：macOS 是 `.dmg`，Windows 是 NSIS 的 `*-setup.exe`。
+
+说明与限制：
+
+- **没有代码签名**：macOS 是 ad-hoc 签名、没有公证，Windows 没有证书。用户首次打开要手动放行，步骤写在 `.github/release-notes.md`（会进入每个 Release 的正文）。接 Developer ID 与证书的做法见上面「对外分发前还需要」，需要时把证书放进仓库的 Secrets 再扩展 workflow。
+- **首次构建很慢**：要先从源码编译 OpenCV 和整个 Rust 依赖，几十分钟；OpenCV 与 `target` 会被缓存。缓存的作用域规则是：标签触发的运行写入的缓存只有同一个标签能读，所以先在 `main` 上手动运行一次预热，之后的标签才能用上。
+- 发布前会跑前端类型检查和测试，**不会跑 Rust 测试**（`cargo test --workspace` 请在本机发版前跑）。
+- Windows 动态链接 C 运行库（`/MD`），用户机器需要 VC++ 运行库。
+- **验证状况**：OpenCV 构建脚本在本机 macOS 上跑通，并用它的产物编译、测试过 `liverguard-vision`；workflow 通过了 `actionlint`。**workflow 本身还没有在 GitHub 上跑过**，Windows 的 OpenCV 构建与 Tauri 打包更是第一次才会知道结果，见 `DESIGN.md`。

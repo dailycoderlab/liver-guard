@@ -1,0 +1,181 @@
+# Build the desktop installers for macOS (Apple Silicon) and Windows (x64) and, for a
+# version tag, publish them as a draft GitHub Release.
+#
+#   git tag v0.2.0 && git push origin v0.2.0   build + draft release
+#   Actions -> Release -> Run workflow         build only; installers are kept as run artifacts
+#
+# Run it once by hand on main first: caches written by a tag run can only be read by that
+# tag, while tag runs can read caches written on main.
+#
+# Not signed: there is no Apple Developer ID or Windows certificate behind this. See
+# README "持续集成与发布" for what to add when there is.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Cheap and runs first: wrong version numbers or a broken web app should not cost
+  # twenty minutes of macOS runner time.
+  web:
+    name: Web checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/web/pnpm-lock.yaml
+
+      - name: Tag matches the version in the project
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/ci/check-version.mjs "$GITHUB_REF_NAME"
+
+      - name: Install, typecheck, test
+        working-directory: apps/desktop/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: web
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+            bundles: dmg
+            installers: target/release/bundle/dmg/*.dmg
+          - name: windows-x64
+            os: windows-2022
+            bundles: nsis
+            installers: target/release/bundle/nsis/*.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/web/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.name }}
+          cache-on-failure: true
+
+      # The opencv crate generates its bindings with libclang.
+      - name: Locate libclang (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          dir="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          [ -f "$dir/libclang.dylib" ] || dir=/Library/Developer/CommandLineTools/usr/lib
+          echo "LIBCLANG_PATH=$dir" >> "$GITHUB_ENV"
+      - name: Locate libclang (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'LIBCLANG_PATH=C:\Program Files\LLVM\bin' >> "$GITHUB_ENV"
+
+      # Puts cl.exe, link.exe and the Windows SDK on PATH for OpenCV, cargo and NSIS.
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+
+      - name: Cache OpenCV
+        uses: actions/cache@v4
+        with:
+          path: .opencv-prefix
+          key: opencv-${{ matrix.name }}-${{ hashFiles('scripts/ci/build-opencv.sh') }}
+
+      # A cache hit only prints and exports the OpenCV_DIR / CMAKE_PREFIX_PATH variables.
+      - name: Build OpenCV (minimal, static)
+        shell: bash
+        run: scripts/ci/build-opencv.sh "$PWD/.opencv-prefix"
+
+      - name: Install web dependencies
+        working-directory: apps/desktop/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          # No Developer ID: seal the .app with an ad-hoc signature (macOS only; ignored elsewhere).
+          APPLE_SIGNING_IDENTITY: '-'
+        run: ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Show what was built
+        shell: bash
+        run: ls -lh ${{ matrix.installers }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liverguard-${{ matrix.name }}
+          path: ${{ matrix.installers }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Draft GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: liverguard-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * | tee SHA256SUMS.txt
+
+      # A draft: the installers are unsigned and Windows has never run on real hardware,
+      # so someone reads the notes and presses Publish. A re-run replaces the files.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --draft \
+              --title "LiverGuard $TAG" \
+              --notes-file .github/release-notes.md \
+              --generate-notes
+          fi

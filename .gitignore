@@ -14,5 +14,6 @@ htmlcov/
 
 # Rust / Tauri
 target/
+.opencv-prefix/
 apps/desktop/src-tauri/gen/
 *.tsbuildinfo
