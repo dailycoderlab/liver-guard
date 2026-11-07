@@ -152,7 +152,7 @@ scripts/mac-dev-build.sh setup    # 只创建证书，不打包
 
 ## 持续集成与发布
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-15`，产物最低支持 macOS 14；`macos-14` 镜像已于 2026-11-02 下线）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：**不支持 Intel Mac**（GitHub 的 Intel 镜像只保证到 2027 年 8 月，决定不做）、也没有 Windows ARM 的包。
+[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-26`，产物最低支持 macOS 14；必须用 macOS 26 的 SDK 编译，因为 `screencapturekit` 依赖的 `apple-metal` 需要它，`macos-15` 会编译失败；`macos-14` 镜像已于 2026-11-02 下线）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：**不支持 Intel Mac**（GitHub 的 Intel 镜像只保证到 2027 年 8 月，决定不做）、也没有 Windows ARM 的包。
 
 | 触发 | 结果 |
 | --- | --- |

@@ -66,9 +66,12 @@ jobs:
       matrix:
         include:
           - name: macos-arm64
-            # macos-14 images were retired on 2026-11-02; pinned rather than macos-latest so the
-            # toolchain does not change under a release. The deployment target stays macOS 14.
-            os: macos-15
+            # Needs the macOS 26 SDK (Xcode 26): screencapturekit's apple-metal dependency
+            # compiles Swift that names macOS 26 Metal types even though it only uses them behind
+            # `#available`, so macos-15 (SDK 15) fails. macos-14 images are retired (2026-11-02).
+            # Pinned rather than macos-latest so the toolchain does not change under a release;
+            # the deployment target stays macOS 14.
+            os: macos-26
             bundles: dmg
             installers: target/release/bundle/dmg/*.dmg
           - name: windows-x64
@@ -132,7 +135,24 @@ jobs:
         env:
           # No Developer ID: seal the .app with an ad-hoc signature (macOS only; ignored elsewhere).
           APPLE_SIGNING_IDENTITY: '-'
-        run: ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }}
+        run: |
+          cargo_args=()
+          if [ "$RUNNER_OS" = Windows ]; then
+            # The static OpenCV lists system import libraries (kernel32, gdi32, ...) as
+            # `static=` native libraries, and rustc then looks for them itself, only in -L
+            # paths; it does not consult the LIB variable that link.exe uses. Point it at
+            # the Windows SDK directory that msvc-dev-cmd put in LIB. rustflags goes through
+            # cargo --config as an array because the path contains spaces.
+            um=""
+            IFS=';' read -ra lib_dirs <<<"$LIB"
+            for d in "${lib_dirs[@]}"; do
+              if [ -f "$d/kernel32.lib" ]; then um="$(cygpath -m "$d")"; break; fi
+            done
+            [ -n "$um" ] || { echo "kernel32.lib not found in LIB=$LIB" >&2; exit 1; }
+            echo "Windows SDK libraries: $um"
+            cargo_args=(-- --config "build.rustflags=['-L','native=$um']")
+          fi
+          ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }} "${cargo_args[@]}"
 
       - name: Show what was built
         shell: bash
