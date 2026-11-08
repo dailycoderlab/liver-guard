@@ -162,7 +162,17 @@ jobs:
             echo "Windows SDK libraries: $um"
             cargo_args=(-- --config "build.rustflags=['-L','native=$um']")
           fi
-          ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }} "${cargo_args[@]}"
+          # Tauri downloads its bundling tools (NSIS, its plugins, WiX) from github.com at bundle
+          # time, and that download fails now and then (HTTP 504). Retrying is cheap: the Rust
+          # build above is already done, so only the bundling step runs again.
+          for attempt in 1 2 3; do
+            if ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }} "${cargo_args[@]}"; then
+              exit 0
+            fi
+            echo "tauri build failed (attempt $attempt of 3)" >&2
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+          exit 1
 
       - name: Show what was built
         shell: bash
