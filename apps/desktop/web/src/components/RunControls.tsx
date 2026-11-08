@@ -38,7 +38,8 @@ export function RunControls() {
           </Button>
         </Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content align="end" sideOffset={8} className="z-50 w-64 rounded-xl border border-line bg-panel p-3 shadow-2xl outline-none">
+          {/* Radix would focus the number field on open, and the webview then selects its whole value. */}
+          <Popover.Content align="end" sideOffset={8} onOpenAutoFocus={(e) => e.preventDefault()} className="z-50 w-64 rounded-xl border border-line bg-panel p-3 shadow-2xl outline-none">
             <Field label="循环执行次数" hint="整张图从开始节点连续走这么多轮；每轮变量会清空，「结束」节点只结束当前一轮，某轮失败或手动停止则整个终止。运行没有总时长限制，要停请手动停止。">
               <NumberInput min={1} max={99999} value={repeatCount} onChange={(v) => useUi.getState().set({ repeatCount: Math.max(1, Math.round(v)) })} />
             </Field>

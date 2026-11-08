@@ -1,4 +1,4 @@
-import { Crosshair, ImageUp, Pencil, Trash2 } from 'lucide-react';
+import { Crop, Crosshair, ImageUp, Pencil, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { targetRefs } from '@/ir/catalog';
 import { cn } from '@/lib/cn';
@@ -6,6 +6,7 @@ import { uploadImage } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi } from '@/store/ui';
 import { confirmDialog, promptDialog } from './Dialogs';
+import { TargetCropDialog } from './TargetCropDialog';
 import { TargetThumb } from './TargetThumb';
 import { Button, Empty, Field, NumberInput, Select } from './ui';
 
@@ -15,6 +16,7 @@ export function TargetsPanel() {
   const scriptId = useEditor((s) => s.scriptId);
   const { renameTarget, deleteTarget, patchTarget } = useEditor.getState();
   const [open, setOpen] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<string | null>(null);
 
   const usage = useMemo(() => {
     const count: Record<string, number> = {};
@@ -50,6 +52,18 @@ export function TargetsPanel() {
                     <div className="truncate">{name}</div>
                     <div className={cn('text-[11px]', used ? 'text-mute' : 'text-amber-400')}>{used ? `被 ${used} 个节点使用` : '未被使用'}</div>
                   </div>
+                  {target.type === 'template' && (
+                    <button
+                      className="hidden text-mute hover:text-ink group-hover:block"
+                      title="框选图片：只保留图片里的一部分，定位更精细"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCropping(name);
+                      }}
+                    >
+                      <Crop size={13} />
+                    </button>
+                  )}
                   <button
                     className="hidden text-mute hover:text-ink group-hover:block"
                     title="重命名"
@@ -103,6 +117,7 @@ export function TargetsPanel() {
           })}
         </ul>
       )}
+      <TargetCropDialog name={cropping} onClose={() => setCropping(null)} />
     </div>
   );
 }
