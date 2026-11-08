@@ -109,10 +109,20 @@ jobs:
         run: echo 'LIBCLANG_PATH=C:\Program Files\LLVM\bin' >> "$GITHUB_ENV"
 
       # Puts cl.exe, link.exe and the Windows SDK on PATH for OpenCV, cargo and NSIS.
-      - uses: ilammy/msvc-dev-cmd@v1
+      # Not ilammy/msvc-dev-cmd: its latest release (v1.13.0) still runs on Node 20, which
+      # GitHub is retiring. This one runs on Node 24 and takes the same `arch` input.
+      - uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
         if: runner.os == 'Windows'
         with:
           arch: x64
+
+      # Git Bash's /usr/bin/link (a coreutils tool) shadows MSVC's link.exe inside bash steps,
+      # so rustc fails with "/usr/bin/link: extra operand". build-opencv.sh removes it too, but
+      # only when it actually builds OpenCV; on an OpenCV cache hit it exits before that.
+      - name: Remove Git's link.exe (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f /usr/bin/link.exe
 
       - name: Cache OpenCV
         uses: actions/cache@v6
@@ -141,7 +151,7 @@ jobs:
             # The static OpenCV lists system import libraries (kernel32, gdi32, ...) as
             # `static=` native libraries, and rustc then looks for them itself, only in -L
             # paths; it does not consult the LIB variable that link.exe uses. Point it at
-            # the Windows SDK directory that msvc-dev-cmd put in LIB. rustflags goes through
+            # the Windows SDK directory that setup-msvc-dev put in LIB. rustflags goes through
             # cargo --config as an array because the path contains spaces.
             um=""
             IFS=';' read -ra lib_dirs <<<"$LIB"
