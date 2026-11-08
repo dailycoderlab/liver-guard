@@ -38,14 +38,13 @@ pub enum Channel {
     Generic,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotifyConfig {
     #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
     pub channel: Channel,
-    /// The robot's webhook URL, access token included.
+    /// The robot's webhook URL, access token included. Alerts are on exactly when it is set
+    /// (see `is_enabled`); clear it to turn them off.
     #[serde(default)]
     pub url: String,
     /// Signing secret (DingTalk 加签 / Feishu 签名校验); empty when the robot has none.
@@ -54,26 +53,12 @@ pub struct NotifyConfig {
     /// The robot's keyword rule: the text must contain it. It is prepended when missing.
     #[serde(default)]
     pub keyword: String,
-    /// Also tell when a looping run (more than one round) finishes every round successfully.
-    /// Failures are always reported when `enabled`; this only adds the success notice.
-    #[serde(default = "yes")]
-    pub on_loop_done: bool,
 }
 
-fn yes() -> bool {
-    true
-}
-
-impl Default for NotifyConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            channel: Channel::default(),
-            url: String::new(),
-            secret: String::new(),
-            keyword: String::new(),
-            on_loop_done: true,
-        }
+impl NotifyConfig {
+    /// Alerts are on as soon as a webhook URL is configured.
+    pub fn is_enabled(&self) -> bool {
+        !self.url.trim().is_empty()
     }
 }
 
@@ -301,7 +286,7 @@ mod tests {
     use super::*;
 
     fn config(channel: Channel) -> NotifyConfig {
-        NotifyConfig { enabled: true, channel, url: "https://example.com/robot/send?access_token=T".into(), ..Default::default() }
+        NotifyConfig { channel, url: "https://example.com/robot/send?access_token=T".into(), ..Default::default() }
     }
 
     fn message() -> Message {
@@ -477,13 +462,13 @@ mod tests {
     }
 
     #[test]
-    fn the_loop_done_notice_is_on_by_default_including_for_settings_saved_before_it_existed() {
-        assert!(NotifyConfig::default().on_loop_done);
-        let old: NotifyConfig = serde_json::from_str(r#"{"enabled":true,"channel":"feishu","url":"https://x.test/h"}"#).unwrap();
-        assert!(old.enabled && old.on_loop_done);
-        let off: NotifyConfig = serde_json::from_str(r#"{"onLoopDone":false}"#).unwrap();
-        assert!(!off.on_loop_done);
-        let round_trip: NotifyConfig = serde_json::from_str(&serde_json::to_string(&off).unwrap()).unwrap();
-        assert_eq!(round_trip, off);
+    fn alerts_are_on_exactly_when_a_webhook_url_is_set() {
+        assert!(!NotifyConfig::default().is_enabled());
+        assert!(!NotifyConfig { url: "  ".into(), ..Default::default() }.is_enabled());
+        assert!(config(Channel::Feishu).is_enabled());
+        // Settings saved while the removed `enabled` / `onLoopDone` switches existed still load;
+        // the url alone decides.
+        let old: NotifyConfig = serde_json::from_str(r#"{"enabled":false,"onLoopDone":false,"channel":"feishu","url":"https://x.test/h"}"#).unwrap();
+        assert!(old.is_enabled());
     }
 }

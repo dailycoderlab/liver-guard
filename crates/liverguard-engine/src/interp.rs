@@ -150,8 +150,8 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Send a webhook message when the run ends in an unhandled failure, and, for a looping run
-    /// that completes every round, a done notice (`config.on_loop_done`). Does nothing unless
-    /// `config.enabled`. The outcome is logged as `alert_sent` / `alert_failed`; a failed
+    /// that completes every round, a done notice. Does nothing unless
+    /// `config.is_enabled()` (a webhook URL is set). The outcome is logged as `alert_sent` / `alert_failed`; a failed
     /// delivery never changes the run's own result.
     pub fn set_alert(&mut self, config: liverguard_notify::NotifyConfig) {
         self.set_alert_with(config, crate::alert::webhook_sender());
@@ -159,7 +159,7 @@ impl<'a> Interpreter<'a> {
 
     /// Like `set_alert` with a custom delivery function (tests).
     pub fn set_alert_with(&mut self, config: liverguard_notify::NotifyConfig, sender: crate::alert::AlertSender) {
-        self.alert = config.enabled.then_some((config, sender));
+        self.alert = config.is_enabled().then_some((config, sender));
     }
 
     pub fn vars(&self) -> &std::collections::BTreeMap<String, VarValue> {
@@ -219,12 +219,12 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Tell the configured webhook how the run ended: a failure alert for `Failed`, the
-    /// loop-done notice for `Done` (if the config wants it). Delivery trouble is only logged.
+    /// loop-done notice for `Done`. Delivery trouble is only logged.
     fn notify(&mut self, result: &RunResult) {
         let Some((config, sender)) = self.alert.clone() else { return };
         let message = match result.state {
             RunState::Failed => crate::alert::failure_message(self.ir, result, self.round, self.rounds),
-            RunState::Done if config.on_loop_done => crate::alert::loop_done_message(self.ir, result, self.rounds),
+            RunState::Done => crate::alert::loop_done_message(self.ir, result, self.rounds),
             _ => return,
         };
         match sender(&config, &message) {

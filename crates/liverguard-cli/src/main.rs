@@ -265,7 +265,7 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
     }
 
     // Failure alerts come from the settings the desktop app saved (same store, same file).
-    let alert = if args.no_notify { None } else { Some(store.load_settings()?.notify).filter(|n| n.enabled) };
+    let alert = if args.no_notify { None } else { Some(store.load_settings()?.notify).filter(|n| n.is_enabled()) };
     let run_id = uuid::Uuid::new_v4().simple().to_string();
     let sink: EventSink = Arc::new(print_event);
     let (result, reporter) = liverguard_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, liverguard_engine::RunOptions { sink: Some(sink), rounds: args.repeat, alert }).map_err(|e| anyhow!(e))?;

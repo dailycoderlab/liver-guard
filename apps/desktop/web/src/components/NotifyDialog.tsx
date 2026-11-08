@@ -14,7 +14,10 @@ const CHANNELS: { id: NotifyChannel; label: string; hint: string }[] = [
   { id: 'generic', label: '通用 Webhook', hint: '向该地址 POST 一个 JSON：{ event, title, text, details }，details 里有脚本名、节点、原因、轮次等字段。' },
 ];
 
-const EMPTY: NotifyConfig = { enabled: false, channel: 'dingtalk', url: '', secret: '', keyword: '', onLoopDone: true };
+const EMPTY: NotifyConfig = { channel: 'dingtalk', url: '', secret: '', keyword: '' };
+
+/** Alerts are on exactly when a webhook URL is configured. */
+export const isNotifyOn = (config: NotifyConfig) => config.url.trim() !== '';
 
 type TestState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'ok' } | { kind: 'error'; text: string };
 
@@ -64,7 +67,7 @@ export function NotifyDialog({ open, onOpenChange, onSaved }: { open: boolean; o
     try {
       await backend.saveNotifyConfig(config);
       onSaved?.(config);
-      useUi.getState().notify(config.enabled ? '运行通知已开启' : '设置已保存（运行通知未开启）');
+      useUi.getState().notify(isNotifyOn(config) ? '运行通知已开启' : '运行通知已关闭（未填写 Webhook 地址）');
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -86,18 +89,9 @@ export function NotifyDialog({ open, onOpenChange, onSaved }: { open: boolean; o
           </div>
 
           <p className="mb-3 text-[11px] leading-5 text-mute">
-            脚本因为没有被处理的失败而中止时（找不到目标、截图卡住等），向群机器人发一条消息；循环执行也会随之停止。脚本里接了「失败 / 超时」出口的失败视为已处理，不会通知；手动停止也不会。循环执行（多于一轮）全部成功结束时，也可以发一条完成通知。
+            填写 Webhook 地址即开启通知，清空即关闭。脚本因为没有被处理的失败而中止时（找不到目标、截图卡住等），向群机器人发一条消息；循环执行也会随之停止。脚本里接了「失败 / 超时」出口的失败视为已处理，不会通知；手动停止也不会。循环执行（多于一轮）全部成功结束时，会再发一条完成通知。
             这是整个应用的设置，对所有脚本生效，不会随脚本导出。
           </p>
-
-          <label className="mb-3 flex cursor-pointer items-center gap-2">
-            <input type="checkbox" className="size-4 accent-[var(--color-accent)]" checked={config.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
-            <span>脚本失败时发送通知</span>
-          </label>
-          <label className="mb-3 -mt-1 ml-6 flex cursor-pointer items-center gap-2">
-            <input type="checkbox" className="size-4 accent-[var(--color-accent)]" checked={config.onLoopDone} disabled={!config.enabled} onChange={(e) => patch({ onLoopDone: e.target.checked })} />
-            <span className={config.enabled ? '' : 'text-mute'}>循环执行全部完成时也通知</span>
-          </label>
 
           <div className={loaded ? 'flex flex-col gap-3' : 'pointer-events-none flex flex-col gap-3 opacity-50'}>
             <Field label="接收方" hint={channel.hint}>

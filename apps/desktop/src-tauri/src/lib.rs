@@ -34,6 +34,7 @@ pub fn run() {
             load_image,
             detect_candidates,
             create_template,
+            refine_template,
             asset_png,
             run_start,
             run_stop,

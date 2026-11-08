@@ -214,11 +214,11 @@ pub fn get_notify_config(state: State<'_, AppState>) -> CmdResult<NotifyConfig> 
     state.store.load_settings().map(|s| s.notify).map_err(err)
 }
 
-/// Save the alert settings. A half-filled form is fine while alerts are off; once switched on the
-/// configuration has to be usable.
+/// Save the alert settings. Alerts are on exactly when a webhook URL is set, so an empty URL
+/// (alerts off) is always fine; a set one has to be usable.
 #[tauri::command]
 pub fn save_notify_config(state: State<'_, AppState>, config: NotifyConfig) -> CmdResult<()> {
-    if config.enabled {
+    if config.is_enabled() {
         liverguard_notify::validate(&config).map_err(err)?;
     }
     let mut settings = state.store.load_settings().map_err(err)?;
@@ -396,6 +396,25 @@ pub async fn create_template(state: State<'_, AppState>, seq: u64, rect: Rect) -
     .await
 }
 
+/// Cut a smaller template out of an existing template target's image. `rect` is in pixels of
+/// that image. Returns the target with the new asset; the old asset stays in the store, so
+/// undoing in the editor still finds it.
+#[tauri::command]
+pub async fn refine_template(state: State<'_, AppState>, target: Target, rect: Rect) -> CmdResult<Target> {
+    let Target::Template(source) = target else {
+        return Err("只有模板目标可以框选图片".to_string());
+    };
+    let store = state.store.clone();
+    blocking(move || {
+        let png = store.read_asset(&source.asset).map_err(err)?;
+        let area = (rect.x.round() as i32, rect.y.round() as i32, rect.w.round() as i32, rect.h.round() as i32);
+        let created = author::refine_template(&source, &png, area).map_err(err)?;
+        store.put_asset_verified(&created.target.asset, &created.png).map_err(err)?;
+        Ok(Target::Template(created.target))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn asset_png(state: State<'_, AppState>, sha: String) -> CmdResult<Response> {
     state.store.read_asset(&sha).map(Response::new).map_err(err)
@@ -451,7 +470,7 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, repeat: u32, run_id
 
     // A settings file that cannot be read must not silently turn alerts off.
     let alert = match store.load_settings() {
-        Ok(settings) => Some(settings.notify).filter(|n| n.enabled),
+        Ok(settings) => Some(settings.notify).filter(|n| n.is_enabled()),
         Err(error) => {
             sink(&liverguard_engine::RunEvent::Log {
                 level: "warn".into(),

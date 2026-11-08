@@ -94,6 +94,7 @@ export const tauriBackend: Backend = {
   },
   detectCandidates: (seq, x, y) => invoke<Rect[]>('detect_candidates', { seq, x, y }),
   createTemplate: (seq, rect) => invoke<Target>('create_template', { seq, rect }),
+  refineTemplate: (target, rect) => invoke<Target>('refine_template', { target, rect }),
   async assetPng(sha) {
     return new Blob([toBytes(await invoke<ArrayBuffer>('asset_png', { sha }))], { type: 'image/png' });
   },

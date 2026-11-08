@@ -959,8 +959,9 @@ fn stopping_between_rounds_stops_the_run() {
 use liverguard_engine::alert::AlertSender;
 use liverguard_notify::{Message, NotifyConfig, NotifyError};
 
+/// Alerts are on exactly when a webhook URL is set, so "disabled" is an empty URL.
 fn alert_config(enabled: bool) -> NotifyConfig {
-    NotifyConfig { enabled, url: "https://example.com/hook".into(), ..Default::default() }
+    NotifyConfig { url: if enabled { "https://example.com/hook".into() } else { String::new() }, ..Default::default() }
 }
 
 /// A sender that records what it was asked to send (and optionally fails).
@@ -1071,24 +1072,14 @@ fn a_loop_that_finishes_every_round_sends_one_done_notice() {
 }
 
 #[test]
-fn the_done_notice_can_be_switched_off_and_never_fires_for_a_single_run_or_a_disabled_webhook() {
-    let off = NotifyConfig { on_loop_done: false, ..alert_config(true) };
-    let (sender, sent) = recording_sender(false);
-    run_alerting(&two_logs(), &Screen::default(), 3, off.clone(), sender);
-    assert!(sent.lock().unwrap().is_empty(), "switched off");
-
+fn the_done_notice_never_fires_for_a_single_run_or_without_a_webhook() {
     let (sender, sent) = recording_sender(false);
     run_alerting(&two_logs(), &Screen::default(), 1, alert_config(true), sender);
     assert!(sent.lock().unwrap().is_empty(), "one round is not a loop");
 
     let (sender, sent) = recording_sender(false);
     run_alerting(&two_logs(), &Screen::default(), 3, alert_config(false), sender);
-    assert!(sent.lock().unwrap().is_empty(), "webhook disabled");
-
-    // Switching the done notice off does not silence failures.
-    let (sender, sent) = recording_sender(false);
-    run_alerting(&failing_tap_graph(), &Screen::default(), 3, off, sender);
-    assert_eq!(sent.lock().unwrap().len(), 1);
+    assert!(sent.lock().unwrap().is_empty(), "no webhook configured");
 }
 
 #[test]

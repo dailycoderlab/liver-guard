@@ -252,10 +252,10 @@ export const mockBackend: Backend = {
     return record;
   },
   async getNotifyConfig() {
-    return load<NotifyConfig>(NOTIFY_KEY, { enabled: false, channel: 'dingtalk', url: '', secret: '', keyword: '', onLoopDone: true });
+    return load<NotifyConfig>(NOTIFY_KEY, { channel: 'dingtalk', url: '', secret: '', keyword: '' });
   },
   async saveNotifyConfig(config) {
-    if (config.enabled && !/^https?:\/\/\S+$/.test(config.url.trim())) throw new Error('Webhook 地址必须是 http:// 或 https:// 开头的链接');
+    if (config.url.trim() && !/^https?:\/\/\S+$/.test(config.url.trim())) throw new Error('Webhook 地址必须是 http:// 或 https:// 开头的链接');
     localStorage.setItem(NOTIFY_KEY, JSON.stringify(config));
   },
   async sendTestNotification(config) {
@@ -346,6 +346,28 @@ export const mockBackend: Backend = {
       multi: 'nearest-last',
       auto: true,
     } as Target;
+  },
+  async refineTemplate(target, rect): Promise<Target> {
+    if (target.type !== 'template') throw new Error('只有模板目标可以框选图片');
+    const source = assets.get(target.asset);
+    if (!source) throw new Error('素材不存在');
+    const bitmap = await createImageBitmap(source);
+    const x = Math.min(Math.max(0, rect.x), bitmap.width - 1);
+    const y = Math.min(Math.max(0, rect.y), bitmap.height - 1);
+    const w = Math.min(rect.w, bitmap.width - x);
+    const h = Math.min(rect.h, bitmap.height - y);
+    if (w < 4 || h < 4) {
+      bitmap.close();
+      throw new Error('框选区域太小');
+    }
+    const crop = document.createElement('canvas');
+    crop.width = w;
+    crop.height = h;
+    crop.getContext('2d')!.drawImage(bitmap, x, y, w, h, 0, 0, w, h);
+    bitmap.close();
+    const sha = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+    assets.set(sha, await toBlob(crop, 'image/png'));
+    return { ...target, asset: sha, assetBox: { w, h } };
   },
   async assetPng(sha) {
     const blob = assets.get(sha);

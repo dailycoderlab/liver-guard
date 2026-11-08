@@ -1,6 +1,7 @@
 import { Camera, Crosshair, ImageUp, Pause, Play, Scissors } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { backend, type FramePacket, type Rect } from '@/api';
+import { clamp, HANDLES, type Handle, normalize, resizeRect } from '@/lib/selection';
 import { surfaceLabel, surfaceValue } from '@/lib/surface';
 import { guarded, requireSurface, uploadImage } from '@/store/actions';
 import { useEditor } from '@/store/editor';
@@ -8,27 +9,6 @@ import { useUi } from '@/store/ui';
 import { Button, Empty, Input } from './ui';
 
 type Mode = 'idle' | 'live' | 'frozen';
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-function normalize(a: { x: number; y: number }, b: { x: number; y: number }): Rect {
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.abs(a.x - b.x)), h: Math.round(Math.abs(a.y - b.y)) };
-}
-
-/** Eight grips around the selection; fx/fy say which edges a grip moves (0 = low edge, 1 = high edge, 0.5 = neither). */
-const HANDLES = [
-  { id: 'nw', fx: 0, fy: 0, cursor: 'cursor-nwse-resize' },
-  { id: 'n', fx: 0.5, fy: 0, cursor: 'cursor-ns-resize' },
-  { id: 'ne', fx: 1, fy: 0, cursor: 'cursor-nesw-resize' },
-  { id: 'e', fx: 1, fy: 0.5, cursor: 'cursor-ew-resize' },
-  { id: 'se', fx: 1, fy: 1, cursor: 'cursor-nwse-resize' },
-  { id: 's', fx: 0.5, fy: 1, cursor: 'cursor-ns-resize' },
-  { id: 'sw', fx: 0, fy: 1, cursor: 'cursor-nesw-resize' },
-  { id: 'w', fx: 0, fy: 0.5, cursor: 'cursor-ew-resize' },
-] as const;
-type Handle = (typeof HANDLES)[number];
 
 /** Put a freshly made target on the selected node when that slot is empty. */
 function assignToSelected(name: string) {
@@ -164,16 +144,7 @@ export function LivePanel({ active }: { active: boolean }) {
   const onHandleMove = (e: React.PointerEvent) => {
     const r = resize.current;
     if (!r || !frame) return;
-    const p = toImage(e);
-    let x0 = r.orig.x;
-    let x1 = r.orig.x + r.orig.w;
-    let y0 = r.orig.y;
-    let y1 = r.orig.y + r.orig.h;
-    if (r.handle.fx === 0) x0 = p.x;
-    if (r.handle.fx === 1) x1 = p.x;
-    if (r.handle.fy === 0) y0 = p.y;
-    if (r.handle.fy === 1) y1 = p.y;
-    setRect(normalize({ x: x0, y: y0 }, { x: x1, y: y1 }));
+    setRect(resizeRect(r.orig, r.handle, toImage(e)));
   };
   const onHandleUp = () => {
     resize.current = null;

@@ -595,10 +595,9 @@ mod tests {
     fn settings_default_to_off_and_round_trip() {
         let (dir, store) = store();
         assert_eq!(store.load_settings().unwrap(), Settings::default());
-        assert!(!store.load_settings().unwrap().notify.enabled);
+        assert!(!store.load_settings().unwrap().notify.is_enabled());
 
         let mut settings = Settings::default();
-        settings.notify.enabled = true;
         settings.notify.url = "https://example.com/hook".into();
         settings.notify.channel = liverguard_notify::Channel::Feishu;
         store.save_settings(&settings).unwrap();

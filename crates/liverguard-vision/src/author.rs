@@ -68,6 +68,38 @@ pub fn create_template(frame: &Frame, rect: (i32, i32, i32, i32)) -> Result<NewT
     Ok(NewTemplate { png, target })
 }
 
+/// Cut a smaller template out of an existing one: `rect` is in pixels of the template image
+/// (`png` is its asset). Everything else about the target is kept (search region, recording
+/// scale, thresholds, anchor...), since the new crop lies inside the old box, which lies inside
+/// the search region. Only `asset` and `asset_box` change.
+pub fn refine_template(source: &TemplateTarget, png: &[u8], rect: (i32, i32, i32, i32)) -> Result<NewTemplate> {
+    let image = decode_template(png)?;
+    let (width, height) = (image.cols(), image.rows());
+    let x = rect.0.clamp(0, width - 1);
+    let y = rect.1.clamp(0, height - 1);
+    let w = rect.2.min(width - x);
+    let h = rect.3.min(height - y);
+    if w < 4 || h < 4 {
+        return Err(VisionError::Invalid("the selected area is too small".to_string()));
+    }
+
+    let crop = util::crop(&image, x, y, w, h)?;
+    let png = encode(&crop, ".png", &Vector::new())?;
+    let mut target = source.clone();
+    target.asset = AssetStore::hash_bytes(&png);
+    target.asset_box = AssetBox { w: w as f64, h: h as f64 };
+    Ok(NewTemplate { png, target })
+}
+
+/// Decode a stored template: unlike a user screenshot it may be tiny, so there is no size floor.
+fn decode_template(bytes: &[u8]) -> Result<Mat> {
+    let image = imgcodecs::imdecode(&Vector::<u8>::from_slice(bytes), imgcodecs::IMREAD_COLOR)?;
+    if image.empty() {
+        return Err(VisionError::Invalid("the template image is not decodable".to_string()));
+    }
+    Ok(image)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +153,35 @@ mod tests {
     fn rejects_bytes_that_are_not_an_image() {
         assert!(decode_image(b"definitely not an image").is_err());
         assert!(decode_image(&[]).is_err());
+    }
+
+    #[test]
+    fn refining_keeps_everything_but_the_image_and_its_box() {
+        let f = frame(1200, 800, 2.0);
+        let mut original = create_template(&f, (300, 200, 120, 60)).unwrap();
+        original.target.threshold = 0.9;
+        original.target.anchor = [0.25, 0.75];
+
+        let refined = refine_template(&original.target, &original.png, (20, 10, 60, 30)).unwrap();
+        assert_eq!((refined.target.asset_box.w, refined.target.asset_box.h), (60.0, 30.0));
+        assert_eq!(refined.target.asset, AssetStore::hash_bytes(&refined.png));
+        assert_ne!(refined.target.asset, original.target.asset);
+        assert_eq!(refined.target.roi, original.target.roi);
+        assert_eq!((refined.target.record_scale, refined.target.record_width), (2.0, 600.0));
+        assert_eq!((refined.target.threshold, refined.target.anchor), (0.9, [0.25, 0.75]));
+        // The new image really is the sub-rectangle.
+        let crop = decode_template(&refined.png).unwrap();
+        assert_eq!((crop.cols(), crop.rows()), (60, 30));
+    }
+
+    #[test]
+    fn refining_clamps_to_the_image_and_refuses_a_tiny_box() {
+        let f = frame(400, 300, 1.0);
+        let original = create_template(&f, (100, 100, 80, 40)).unwrap();
+        let clamped = refine_template(&original.target, &original.png, (60, 20, 100, 100)).unwrap();
+        assert_eq!((clamped.target.asset_box.w, clamped.target.asset_box.h), (20.0, 20.0));
+        assert!(refine_template(&original.target, &original.png, (10, 10, 3, 30)).is_err());
+        assert!(refine_template(&original.target, b"not an image", (0, 0, 40, 40)).is_err());
     }
 
     #[test]

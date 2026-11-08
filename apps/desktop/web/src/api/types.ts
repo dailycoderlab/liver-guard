@@ -100,15 +100,13 @@ export type NotifyChannel = 'dingtalk' | 'wecom' | 'feishu' | 'generic';
 
 /** Failure alert settings; they live in the app's settings file, not in any script. */
 export interface NotifyConfig {
-  enabled: boolean;
   channel: NotifyChannel;
+  /** Alerts are on exactly when this is set; clear it to turn them off. */
   url: string;
   /** Signing secret (钉钉加签 / 飞书签名校验); empty when the robot has none. */
   secret: string;
   /** The robot's keyword rule; prepended to the message when missing. */
   keyword: string;
-  /** Also notify when a looping run finishes every round successfully. */
-  onLoopDone: boolean;
 }
 
 export interface Backend {
@@ -146,6 +144,8 @@ export interface Backend {
   loadImage(image: Blob): Promise<FramePacket>;
   detectCandidates(seq: number, x: number, y: number): Promise<Rect[]>;
   createTemplate(seq: number, rect: Rect): Promise<Target>;
+  /** Cut a smaller template out of an existing template target; `rect` is in pixels of its image. */
+  refineTemplate(target: Target, rect: Rect): Promise<Target>;
   assetPng(sha: string): Promise<Blob>;
 
   /** `repeat` is how many times the whole graph is walked in this one run (at least 1). */

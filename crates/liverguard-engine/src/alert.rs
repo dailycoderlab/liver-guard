@@ -5,8 +5,8 @@
 //! error, stalled capture, step limit...). A failure the script routes on purpose is normal
 //! control flow and stays silent; a manual stop is not a failure either.
 //!
-//! A looping run (more than one round) that finishes every round also sends a "done" notice,
-//! unless `NotifyConfig::on_loop_done` is off. A single-round success sends nothing.
+//! A looping run (more than one round) that finishes every round also sends a "done" notice.
+//! A single-round success sends nothing.
 
 use std::sync::Arc;
 

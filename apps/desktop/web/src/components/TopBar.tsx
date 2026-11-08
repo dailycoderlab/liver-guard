@@ -4,7 +4,7 @@ import { backend } from '@/api';
 import { probeNow, save, validateNow } from '@/store/actions';
 import { useEditor } from '@/store/editor';
 import { useUi } from '@/store/ui';
-import { NotifyDialog } from './NotifyDialog';
+import { isNotifyOn, NotifyDialog } from './NotifyDialog';
 import { RunControls } from './RunControls';
 import { SurfacePicker } from './SurfacePicker';
 import { Button } from './ui';
@@ -21,7 +21,7 @@ export function TopBar() {
   const [notifySettings, setNotifySettings] = useState(false);
   const [notifyOn, setNotifyOn] = useState(false);
   useEffect(() => {
-    void backend.getNotifyConfig().then((c) => setNotifyOn(c.enabled), () => undefined);
+    void backend.getNotifyConfig().then((c) => setNotifyOn(isNotifyOn(c)), () => undefined);
   }, []);
   const open = !!scriptId;
   const running = runStatus !== 'idle';
@@ -68,7 +68,7 @@ export function TopBar() {
         <div className="mx-1 h-5 w-px bg-line" />
         <RunControls />
       </div>
-      <NotifyDialog open={notifySettings} onOpenChange={setNotifySettings} onSaved={(c) => setNotifyOn(c.enabled)} />
+      <NotifyDialog open={notifySettings} onOpenChange={setNotifySettings} onSaved={(c) => setNotifyOn(isNotifyOn(c))} />
     </header>
   );
 }
