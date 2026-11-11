@@ -409,4 +409,12 @@ export const mockBackend: Backend = {
     if (!record) throw new Error('运行记录不存在');
     return { id, record, logs: '' };
   },
+
+  // The browser has no release feed to ask.
+  async checkUpdate() {
+    return null;
+  },
+  async installUpdate() {
+    throw new Error('浏览器里无法更新');
+  },
 };

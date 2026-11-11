@@ -10,14 +10,15 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
 use liverguard_ir::IrDoc;
 use liverguard_notify::{Message, NotifyConfig, NotifyError};
+use serde_json::json;
 
 use crate::interp::RunResult;
 
 /// How an alert is delivered; tests substitute their own.
-pub type AlertSender = Arc<dyn Fn(&NotifyConfig, &Message) -> Result<(), NotifyError> + Send + Sync>;
+pub type AlertSender =
+    Arc<dyn Fn(&NotifyConfig, &Message) -> Result<(), NotifyError> + Send + Sync>;
 
 /// The real thing: an HTTP POST to the configured webhook.
 pub fn webhook_sender() -> AlertSender {
@@ -54,18 +55,33 @@ pub fn failure_message(ir: &IrDoc, result: &RunResult, round: u32, rounds: u32) 
     let node = result.error_node.as_deref().and_then(|id| ir.flow.node(id));
     let elapsed_ms = result.ended_at.saturating_sub(result.started_at);
 
-    let mut lines = vec!["【护肝】脚本运行失败".to_string(), format!("脚本：{}", ir.meta.name)];
+    let mut lines = vec![
+        "【护肝】脚本运行失败".to_string(),
+        format!("脚本：{}", ir.meta.name),
+    ];
     if let Some(id) = &result.error_node {
-        let name = node.and_then(|n| n.label.clone().filter(|l| !l.is_empty())).unwrap_or_else(|| id.clone());
-        let kind = node.map(|n| format!("（{}）", n.kind.type_name())).unwrap_or_default();
+        let name = node
+            .and_then(|n| n.label.clone().filter(|l| !l.is_empty()))
+            .unwrap_or_else(|| id.clone());
+        let kind = node
+            .map(|n| format!("（{}）", n.kind.type_name()))
+            .unwrap_or_default();
         lines.push(format!("节点：「{name}」{kind}"));
     }
     let hint = hint(&code);
-    lines.push(format!("原因：{code}{}{}", if reason.is_empty() { "" } else { " — " }, reason));
+    lines.push(format!(
+        "原因：{code}{}{}",
+        if reason.is_empty() { "" } else { " — " },
+        reason
+    ));
     if !hint.is_empty() {
         lines.push(format!("可能是：{hint}"));
     }
-    let progress = format!("已执行 {} 步，已运行 {}", result.step_count, duration_text(elapsed_ms));
+    let progress = format!(
+        "已执行 {} 步，已运行 {}",
+        result.step_count,
+        duration_text(elapsed_ms)
+    );
     if rounds > 1 {
         lines.push(format!("进度：第 {round}/{rounds} 轮，{progress}"));
         if round < rounds {
@@ -74,7 +90,10 @@ pub fn failure_message(ir: &IrDoc, result: &RunResult, round: u32, rounds: u32) 
     } else {
         lines.push(format!("进度：{progress}"));
     }
-    lines.push(format!("时间：{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));
+    lines.push(format!(
+        "时间：{}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    ));
 
     Message {
         event: "run_failed",
@@ -101,7 +120,11 @@ pub fn loop_done_message(ir: &IrDoc, result: &RunResult, rounds: u32) -> Message
         "【护肝】循环执行完成".to_string(),
         format!("脚本：{}", ir.meta.name),
         format!("结果：共 {rounds} 轮全部成功"),
-        format!("已执行 {} 步，总用时 {}", result.step_count, duration_text(elapsed_ms)),
+        format!(
+            "已执行 {} 步，总用时 {}",
+            result.step_count,
+            duration_text(elapsed_ms)
+        ),
         format!("时间：{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")),
     ];
     Message {

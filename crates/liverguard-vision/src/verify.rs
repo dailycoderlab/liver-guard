@@ -15,7 +15,14 @@ pub const MIN_SIMILARITY: f64 = 0.45;
 
 fn sample(image: &Mat) -> Result<Vec<f32>> {
     let mut small = Mat::default();
-    imgproc::resize(image, &mut small, Size::new(SAMPLE, SAMPLE), 0.0, 0.0, imgproc::INTER_AREA)?;
+    imgproc::resize(
+        image,
+        &mut small,
+        Size::new(SAMPLE, SAMPLE),
+        0.0,
+        0.0,
+        imgproc::INTER_AREA,
+    )?;
     Ok(small.data_bytes()?.iter().map(|&v| v as f32).collect())
 }
 
@@ -24,7 +31,9 @@ pub fn color_similarity(patch: &Mat, template: &Mat) -> f64 {
     if patch.empty() || template.empty() {
         return 0.0;
     }
-    let (Ok(a), Ok(b)) = (sample(patch), sample(template)) else { return 0.0 };
+    let (Ok(a), Ok(b)) = (sample(patch), sample(template)) else {
+        return 0.0;
+    };
 
     let mean_a = a.iter().map(|&v| v as f64).sum::<f64>() / a.len() as f64;
     let mean_b = b.iter().map(|&v| v as f64).sum::<f64>() / b.len() as f64;
@@ -36,7 +45,11 @@ pub fn color_similarity(patch: &Mat, template: &Mat) -> f64 {
     let denom = norm_a * norm_b;
     if denom < 1e-6 {
         // Both patches are flat: fall back to comparing brightness only.
-        return if (mean_a - mean_b).abs() < 12.0 { 1.0 } else { 0.0 };
+        return if (mean_a - mean_b).abs() < 12.0 {
+            1.0
+        } else {
+            0.0
+        };
     }
 
     let dot: f64 = va.iter().zip(&vb).map(|(x, y)| x * y).sum();

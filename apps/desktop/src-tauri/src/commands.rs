@@ -9,15 +9,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use opencv::core::Mat;
-use opencv::prelude::*;
-use serde_json::{json, Value};
 use liverguard_engine::{Driver, DriverError, EventSink, ProbeRow};
 use liverguard_ir::{Bounds, IrDoc, Problem, Rect, Target};
 use liverguard_notify::NotifyConfig;
 use liverguard_store::{LocalStore, ScriptRecord, ScriptSummary};
 use liverguard_vision::detect::{detect_candidates as detect, DetectOptions, PixelBox};
 use liverguard_vision::{author, AssetStore, Frame};
+use opencv::core::Mat;
+use opencv::prelude::*;
+use serde_json::{json, Value};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -112,8 +112,14 @@ fn capture_retrying(driver: &mut dyn Driver) -> Result<Frame, DriverError> {
     Err(last)
 }
 
-fn blocking<T: Send + 'static>(work: impl FnOnce() -> CmdResult<T> + Send + 'static) -> impl std::future::Future<Output = CmdResult<T>> {
-    async move { tauri::async_runtime::spawn_blocking(work).await.map_err(err)? }
+fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> CmdResult<T> + Send + 'static,
+) -> impl std::future::Future<Output = CmdResult<T>> {
+    async move {
+        tauri::async_runtime::spawn_blocking(work)
+            .await
+            .map_err(err)?
+    }
 }
 
 // ------------------------------------------------------------------ scripts
@@ -130,7 +136,10 @@ pub fn get_script(state: State<'_, AppState>, id: String) -> CmdResult<ScriptRec
 
 #[tauri::command]
 pub fn create_script(state: State<'_, AppState>, name: String) -> CmdResult<ScriptRecord> {
-    state.store.create_script(&name, IrDoc::empty(&name)).map_err(err)
+    state
+        .store
+        .create_script(&name, IrDoc::empty(&name))
+        .map_err(err)
 }
 
 #[tauri::command]
@@ -144,7 +153,11 @@ pub fn rename_script(state: State<'_, AppState>, id: String, name: String) -> Cm
 }
 
 #[tauri::command]
-pub fn duplicate_script(state: State<'_, AppState>, id: String, name: String) -> CmdResult<ScriptRecord> {
+pub fn duplicate_script(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> CmdResult<ScriptRecord> {
     state.store.duplicate_script(&id, &name).map_err(err)
 }
 
@@ -153,15 +166,35 @@ const MAX_IMPORT_BYTES: u64 = 200 * 1024 * 1024;
 
 /// A file name that is safe on macOS and Windows, built from the script name.
 fn export_file_name(name: &str) -> String {
-    let cleaned: String = name.chars().map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c }).collect();
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || "/\\:*?\"<>|".contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
     let cleaned = cleaned.trim().trim_matches('.');
-    format!("{}.liverguard.json", if cleaned.is_empty() { "script" } else { cleaned })
+    format!(
+        "{}.liverguard.json",
+        if cleaned.is_empty() {
+            "script"
+        } else {
+            cleaned
+        }
+    )
 }
 
 /// Save the script and its template images to a file the user picks. Resolves the path written,
 /// or `None` when the dialog was cancelled.
 #[tauri::command]
-pub async fn export_script(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<Option<String>> {
+pub async fn export_script(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<Option<String>> {
     let store = state.store.clone();
     blocking(move || {
         let bundle = store.export_script(&id).map_err(err)?;
@@ -171,7 +204,9 @@ pub async fn export_script(app: AppHandle, state: State<'_, AppState>, id: Strin
             .add_filter("LiverGuard 脚本", &["json"])
             .set_file_name(export_file_name(&bundle.name))
             .blocking_save_file();
-        let Some(picked) = picked else { return Ok(None) };
+        let Some(picked) = picked else {
+            return Ok(None);
+        };
         let path = picked.into_path().map_err(err)?;
         let bytes = serde_json::to_vec_pretty(&bundle).map_err(err)?;
         std::fs::write(&path, bytes).map_err(err)?;
@@ -182,11 +217,20 @@ pub async fn export_script(app: AppHandle, state: State<'_, AppState>, id: Strin
 
 /// Pick an exported script file and add it as a new script. `None` when cancelled.
 #[tauri::command]
-pub async fn import_script(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Option<ScriptRecord>> {
+pub async fn import_script(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<Option<ScriptRecord>> {
     let store = state.store.clone();
     blocking(move || {
-        let picked = app.dialog().file().add_filter("LiverGuard 脚本", &["json"]).blocking_pick_file();
-        let Some(picked) = picked else { return Ok(None) };
+        let picked = app
+            .dialog()
+            .file()
+            .add_filter("LiverGuard 脚本", &["json"])
+            .blocking_pick_file();
+        let Some(picked) = picked else {
+            return Ok(None);
+        };
         let path = picked.into_path().map_err(err)?;
         if std::fs::metadata(&path).map_err(err)?.len() > MAX_IMPORT_BYTES {
             return Err("文件过大，不像是导出的脚本".to_string());
@@ -229,7 +273,10 @@ pub fn save_notify_config(state: State<'_, AppState>, config: NotifyConfig) -> C
 /// Send a test message with the config as typed in the form (not necessarily saved yet).
 #[tauri::command]
 pub async fn send_test_notification(config: NotifyConfig) -> CmdResult<()> {
-    blocking(move || liverguard_notify::send(&config, &liverguard_notify::test_message()).map_err(err)).await
+    blocking(move || {
+        liverguard_notify::send(&config, &liverguard_notify::test_message()).map_err(err)
+    })
+    .await
 }
 
 // ----------------------------------------------------------------- platform
@@ -257,7 +304,11 @@ pub fn open_permission_settings(kind: String) {
 // --------------------------------------------------------------------- live
 
 #[tauri::command]
-pub async fn live_start(state: State<'_, AppState>, surface: Surface, on_frame: Channel<InvokeResponseBody>) -> CmdResult<()> {
+pub async fn live_start(
+    state: State<'_, AppState>,
+    surface: Surface,
+    on_frame: Channel<InvokeResponseBody>,
+) -> CmdResult<()> {
     state.stop_live();
     *state.surface.lock().unwrap() = surface;
 
@@ -275,23 +326,26 @@ fn live_loop(surface: Surface, stop: Arc<AtomicBool>, channel: Channel<InvokeRes
     let mut driver = platform::make_driver(surface);
     let mut seq = 0u64;
     let report = |message: String| {
-        let _ = channel.send(InvokeResponseBody::Json(json!({ "kind": "error", "message": message }).to_string()));
+        let _ = channel.send(InvokeResponseBody::Json(
+            json!({ "kind": "error", "message": message }).to_string(),
+        ));
     };
 
     while !stop.load(Ordering::Relaxed) {
         let started = std::time::Instant::now();
         match driver.capture() {
-            Ok(frame) => {
-                match frame.to_jpeg(LIVE_JPEG_QUALITY, LIVE_MAX_WIDTH) {
-                    Ok(jpeg) => {
-                        seq += 1;
-                        if channel.send(InvokeResponseBody::Raw(packet(seq, &frame.bounds, &jpeg))).is_err() {
-                            return;
-                        }
+            Ok(frame) => match frame.to_jpeg(LIVE_JPEG_QUALITY, LIVE_MAX_WIDTH) {
+                Ok(jpeg) => {
+                    seq += 1;
+                    if channel
+                        .send(InvokeResponseBody::Raw(packet(seq, &frame.bounds, &jpeg)))
+                        .is_err()
+                    {
+                        return;
                     }
-                    Err(error) => return report(error.to_string()),
                 }
-            }
+                Err(error) => return report(error.to_string()),
+            },
             Err(DriverError::SurfaceChanged) => {}
             Err(error) => return report(error.to_string()),
         }
@@ -322,14 +376,22 @@ pub async fn snapshot(state: State<'_, AppState>) -> CmdResult<Response> {
     })
     .await?;
     let reply = packet(seq, &bounds, &png);
-    *state.pinned.lock().unwrap() = Some(Pinned { seq, image, bounds, external: false });
+    *state.pinned.lock().unwrap() = Some(Pinned {
+        seq,
+        image,
+        bounds,
+        external: false,
+    });
     Ok(Response::new(reply))
 }
 
 /// Pins a user-supplied screenshot in place of a capture. The request body is
 /// the raw file; the reply has the same layout as `snapshot`.
 #[tauri::command]
-pub async fn load_image(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> CmdResult<Response> {
+pub async fn load_image(
+    state: State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> CmdResult<Response> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("需要图片的原始字节".to_string());
     };
@@ -341,25 +403,41 @@ pub async fn load_image(state: State<'_, AppState>, request: tauri::ipc::Request
     let seq = state.next_seq();
     let (png, bounds, image) = blocking(move || {
         let (image, bounds) = author::decode_image(&bytes).map_err(err)?;
-        let png = Frame::new(image.try_clone().map_err(err)?, bounds).to_png().map_err(err)?;
+        let png = Frame::new(image.try_clone().map_err(err)?, bounds)
+            .to_png()
+            .map_err(err)?;
         Ok((png, bounds, image))
     })
     .await?;
     let reply = packet(seq, &bounds, &png);
-    *state.pinned.lock().unwrap() = Some(Pinned { seq, image, bounds, external: true });
+    *state.pinned.lock().unwrap() = Some(Pinned {
+        seq,
+        image,
+        bounds,
+        external: true,
+    });
     Ok(Response::new(reply))
 }
 
 fn pinned_frame(state: &AppState, seq: u64) -> CmdResult<(Mat, Bounds, bool)> {
     let guard = state.pinned.lock().unwrap();
     match guard.as_ref() {
-        Some(pinned) if pinned.seq == seq => Ok((pinned.image.try_clone().map_err(err)?, pinned.bounds, pinned.external)),
+        Some(pinned) if pinned.seq == seq => Ok((
+            pinned.image.try_clone().map_err(err)?,
+            pinned.bounds,
+            pinned.external,
+        )),
         _ => Err("画面已过期，请重新冻结后再操作".to_string()),
     }
 }
 
 #[tauri::command]
-pub async fn detect_candidates(state: State<'_, AppState>, seq: u64, x: f64, y: f64) -> CmdResult<Vec<Rect>> {
+pub async fn detect_candidates(
+    state: State<'_, AppState>,
+    seq: u64,
+    x: f64,
+    y: f64,
+) -> CmdResult<Vec<Rect>> {
     let (image, bounds, external) = pinned_frame(&state, seq)?;
     let surface = *state.surface.lock().unwrap();
     blocking(move || {
@@ -368,29 +446,51 @@ pub async fn detect_candidates(state: State<'_, AppState>, seq: u64, x: f64, y: 
             None
         } else {
             let (gx, gy) = platform::pixel_to_global(&bounds, x, y);
-            platform::make_driver(surface).ax_at(gx, gy).ok().flatten().map(|r| PixelBox {
-                x: (r.x - bounds.x) * bounds.scale,
-                y: (r.y - bounds.y) * bounds.scale,
-                w: r.w * bounds.scale,
-                h: r.h * bounds.scale,
-            })
+            platform::make_driver(surface)
+                .ax_at(gx, gy)
+                .ok()
+                .flatten()
+                .map(|r| PixelBox {
+                    x: (r.x - bounds.x) * bounds.scale,
+                    y: (r.y - bounds.y) * bounds.scale,
+                    w: r.w * bounds.scale,
+                    h: r.h * bounds.scale,
+                })
         };
-        let options = DetectOptions { scale: bounds.scale, ax_box, ..DetectOptions::default() };
+        let options = DetectOptions {
+            scale: bounds.scale,
+            ax_box,
+            ..DetectOptions::default()
+        };
         let found = detect(&image, (x, y), &options).map_err(err)?;
-        Ok(found.into_iter().map(|c| Rect::new(c.x, c.y, c.w, c.h)).collect())
+        Ok(found
+            .into_iter()
+            .map(|c| Rect::new(c.x, c.y, c.w, c.h))
+            .collect())
     })
     .await
 }
 
 #[tauri::command]
-pub async fn create_template(state: State<'_, AppState>, seq: u64, rect: Rect) -> CmdResult<Target> {
+pub async fn create_template(
+    state: State<'_, AppState>,
+    seq: u64,
+    rect: Rect,
+) -> CmdResult<Target> {
     let (image, bounds, _) = pinned_frame(&state, seq)?;
     let store = state.store.clone();
     blocking(move || {
         let frame = Frame::new(image, bounds);
-        let area = (rect.x.round() as i32, rect.y.round() as i32, rect.w.round() as i32, rect.h.round() as i32);
+        let area = (
+            rect.x.round() as i32,
+            rect.y.round() as i32,
+            rect.w.round() as i32,
+            rect.h.round() as i32,
+        );
         let created = author::create_template(&frame, area).map_err(err)?;
-        store.put_asset_verified(&created.target.asset, &created.png).map_err(err)?;
+        store
+            .put_asset_verified(&created.target.asset, &created.png)
+            .map_err(err)?;
         Ok(Target::Template(created.target))
     })
     .await
@@ -400,16 +500,27 @@ pub async fn create_template(state: State<'_, AppState>, seq: u64, rect: Rect) -
 /// that image. Returns the target with the new asset; the old asset stays in the store, so
 /// undoing in the editor still finds it.
 #[tauri::command]
-pub async fn refine_template(state: State<'_, AppState>, target: Target, rect: Rect) -> CmdResult<Target> {
+pub async fn refine_template(
+    state: State<'_, AppState>,
+    target: Target,
+    rect: Rect,
+) -> CmdResult<Target> {
     let Target::Template(source) = target else {
         return Err("只有模板目标可以框选图片".to_string());
     };
     let store = state.store.clone();
     blocking(move || {
         let png = store.read_asset(&source.asset).map_err(err)?;
-        let area = (rect.x.round() as i32, rect.y.round() as i32, rect.w.round() as i32, rect.h.round() as i32);
+        let area = (
+            rect.x.round() as i32,
+            rect.y.round() as i32,
+            rect.w.round() as i32,
+            rect.h.round() as i32,
+        );
         let created = author::refine_template(&source, &png, area).map_err(err)?;
-        store.put_asset_verified(&created.target.asset, &created.png).map_err(err)?;
+        store
+            .put_asset_verified(&created.target.asset, &created.png)
+            .map_err(err)?;
         Ok(Target::Template(created.target))
     })
     .await
@@ -423,7 +534,11 @@ pub fn asset_png(state: State<'_, AppState>, sha: String) -> CmdResult<Response>
 // --------------------------------------------------------------------- runs
 
 #[tauri::command]
-pub async fn probe(state: State<'_, AppState>, ir: IrDoc, surface: Surface) -> CmdResult<Vec<ProbeRow>> {
+pub async fn probe(
+    state: State<'_, AppState>,
+    ir: IrDoc,
+    surface: Surface,
+) -> CmdResult<Vec<ProbeRow>> {
     let store = state.store.clone();
     blocking(move || {
         let mut driver = platform::make_driver(surface);
@@ -433,7 +548,13 @@ pub async fn probe(state: State<'_, AppState>, ir: IrDoc, surface: Surface) -> C
 }
 
 #[tauri::command]
-pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, repeat: u32, on_message: Channel<Value>) -> CmdResult<String> {
+pub async fn run_start(
+    state: State<'_, AppState>,
+    ir: IrDoc,
+    surface: Surface,
+    repeat: u32,
+    on_message: Channel<Value>,
+) -> CmdResult<String> {
     state.stop_live();
     let stop = Arc::new(AtomicBool::new(false));
     {
@@ -459,7 +580,15 @@ pub async fn run_start(state: State<'_, AppState>, ir: IrDoc, surface: Surface, 
     Ok(run_id)
 }
 
-fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, repeat: u32, run_id: &str, stop: Arc<AtomicBool>, channel: &Channel<Value>) -> Value {
+fn execute(
+    store: &LocalStore,
+    ir: &IrDoc,
+    surface: Surface,
+    repeat: u32,
+    run_id: &str,
+    stop: Arc<AtomicBool>,
+    channel: &Channel<Value>,
+) -> Value {
     let mut driver = platform::make_driver(surface);
     let events = channel.clone();
     let sink: EventSink = Arc::new(move |event| {
@@ -482,7 +611,10 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, repeat: u32, run_id
     };
 
     let failed = |message: String| {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         json!({ "kind": "done", "runId": run_id, "result": {
             "state": "failed", "stepCount": 0, "errorCode": "prepare", "errorMsg": message,
             "errorNode": null, "startedAt": now, "endedAt": now,
@@ -490,13 +622,26 @@ fn execute(store: &LocalStore, ir: &IrDoc, surface: Surface, repeat: u32, run_id
     };
 
     let assets = AssetStore::with_dir(store.assets_dir());
-    match liverguard_engine::run_local(ir, &mut *driver, assets, run_id, stop, liverguard_engine::RunOptions { sink: Some(sink), rounds: repeat, alert }) {
+    match liverguard_engine::run_local(
+        ir,
+        &mut *driver,
+        assets,
+        run_id,
+        stop,
+        liverguard_engine::RunOptions {
+            sink: Some(sink),
+            rounds: repeat,
+            alert,
+        },
+    ) {
         Err(message) => failed(message),
         Ok((result, reporter)) => {
             let mut record = result.to_json();
             record["summary"] = reporter.summary();
             record["script"] = Value::String(ir.meta.name.clone());
-            let saved = store.save_run(record, &reporter.jsonl()).unwrap_or_else(|_| run_id.to_string());
+            let saved = store
+                .save_run(record, &reporter.jsonl())
+                .unwrap_or_else(|_| run_id.to_string());
             json!({ "kind": "done", "runId": saved, "result": result.to_json() })
         }
     }
@@ -526,7 +671,10 @@ mod tests {
     #[test]
     fn export_file_names_are_safe_on_both_platforms() {
         assert_eq!(export_file_name("契灵"), "契灵.liverguard.json");
-        assert_eq!(export_file_name(r#"a/b\c:d*e?f"g<h>i|j"#), "a_b_c_d_e_f_g_h_i_j.liverguard.json");
+        assert_eq!(
+            export_file_name(r#"a/b\c:d*e?f"g<h>i|j"#),
+            "a_b_c_d_e_f_g_h_i_j.liverguard.json"
+        );
         assert_eq!(export_file_name("  ..  "), "script.liverguard.json");
         assert_eq!(export_file_name(""), "script.liverguard.json");
     }

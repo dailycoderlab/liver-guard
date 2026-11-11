@@ -17,3 +17,6 @@ target/
 .opencv-prefix/
 apps/desktop/src-tauri/gen/
 *.tsbuildinfo
+
+# Updater signing key (never commit; see README "自动更新")
+/.tauri/

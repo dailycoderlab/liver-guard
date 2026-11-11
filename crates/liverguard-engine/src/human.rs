@@ -71,7 +71,12 @@ impl Plan {
     }
 
     fn push(&mut self, action: PointerAction, at: (f64, f64), wait_ms: f64) {
-        self.steps.push(PointerStep { action, x: at.0, y: at.1, wait_ms });
+        self.steps.push(PointerStep {
+            action,
+            x: at.0,
+            y: at.1,
+            wait_ms,
+        });
     }
 
     /// Add `wait_ms` to the pause after the last event.
@@ -101,10 +106,16 @@ pub fn clamp_spread(spread: f64) -> f64 {
 /// matched box (a large spread therefore flattens towards a uniform draw, it
 /// does not leave the box). x and y are independent and scale with the box's own
 /// width and height.
-pub fn human_point<R: Rng + ?Sized>(rect: &Rect, aim: (f64, f64), spread: f64, rng: &mut R) -> (f64, f64) {
+pub fn human_point<R: Rng + ?Sized>(
+    rect: &Rect,
+    aim: (f64, f64),
+    spread: f64,
+    rng: &mut R,
+) -> (f64, f64) {
     let scale = clamp_spread(spread) / FITTS_WIDTH_IN_SIGMAS;
     let (sigma_x, sigma_y) = (rect.w * scale, rect.h * scale);
-    let inside = |x: f64, y: f64| x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    let inside =
+        |x: f64, y: f64| x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 
     let mut point = aim;
     for _ in 0..HUMAN_POINT_TRIES {
@@ -114,7 +125,10 @@ pub fn human_point<R: Rng + ?Sized>(rect: &Rect, aim: (f64, f64), spread: f64, r
             return point;
         }
     }
-    (point.0.clamp(rect.x, rect.x + rect.w), point.1.clamp(rect.y, rect.y + rect.h))
+    (
+        point.0.clamp(rect.x, rect.x + rect.w),
+        point.1.clamp(rect.y, rect.y + rect.h),
+    )
 }
 
 /// The end of a drag given only a vector: the nominal end point, shifted by a
@@ -140,14 +154,22 @@ pub fn hold_ms<R: Rng + ?Sized>(base_ms: u32, rng: &mut R) -> f64 {
         return 0.0;
     }
     let base = base_ms as f64;
-    lognormal(rng, base, 0.22, base * 0.6, base * 1.8).round().max(1.0)
+    lognormal(rng, base, 0.22, base * 0.6, base * 1.8)
+        .round()
+        .max(1.0)
 }
 
 /// Time to move `distance` onto a target `width` wide: Fitts' law
 /// `120 + 110 * log2(1 + D / W)` ms, log-normal noise (sigma 0.15), 120..1500 ms.
 pub fn travel_ms<R: Rng + ?Sized>(distance: f64, width: f64, rng: &mut R) -> f64 {
     let index_of_difficulty = (1.0 + distance / width.max(8.0)).log2();
-    lognormal(rng, 120.0 + 110.0 * index_of_difficulty, 0.15, 120.0, 1500.0)
+    lognormal(
+        rng,
+        120.0 + 110.0 * index_of_difficulty,
+        0.15,
+        120.0,
+        1500.0,
+    )
 }
 
 fn lognormal<R: Rng + ?Sized>(rng: &mut R, median: f64, sigma: f64, lo: f64, hi: f64) -> f64 {
@@ -190,7 +212,11 @@ pub fn plan_drag<R: Rng + ?Sized>(
     approach(&mut plan, from, start, start_width, rng);
 
     // Hands pause a beat after the button goes down before the stroke begins.
-    plan.push(PointerAction::Down, start, lognormal(rng, 60.0, 0.35, 20.0, 200.0));
+    plan.push(
+        PointerAction::Down,
+        start,
+        lognormal(rng, 60.0, 0.35, 20.0, 200.0),
+    );
 
     let base = duration_base_ms.max(50) as f64;
     let duration = lognormal(rng, base, 0.12, base * 0.8, base * 1.35);
@@ -207,7 +233,13 @@ pub fn plan_drag<R: Rng + ?Sized>(
 
 /// Hover moves up to `to`, ending with a hesitation before the press. With an
 /// unknown start the pointer simply appears at `to`.
-fn approach<R: Rng + ?Sized>(plan: &mut Plan, from: Option<(f64, f64)>, to: (f64, f64), width: f64, rng: &mut R) {
+fn approach<R: Rng + ?Sized>(
+    plan: &mut Plan,
+    from: Option<(f64, f64)>,
+    to: (f64, f64),
+    width: f64,
+    rng: &mut R,
+) {
     if let Some(from) = from {
         let distance = dist(from, to);
         if distance >= MIN_TRAVEL_PX {
@@ -222,7 +254,14 @@ fn approach<R: Rng + ?Sized>(plan: &mut Plan, from: Option<(f64, f64)>, to: (f64
 
 /// A mouse trip to `to`. Long trips sometimes overshoot by 1.5-5% (4..30 px) and
 /// come back with a short corrective move, as ballistic hand movements do.
-fn travel<R: Rng + ?Sized>(plan: &mut Plan, from: (f64, f64), to: (f64, f64), distance: f64, width: f64, rng: &mut R) {
+fn travel<R: Rng + ?Sized>(
+    plan: &mut Plan,
+    from: (f64, f64),
+    to: (f64, f64),
+    distance: f64,
+    width: f64,
+    rng: &mut R,
+) {
     let total = travel_ms(distance, width, rng);
     plan.travel_ms = total;
 
@@ -280,8 +319,14 @@ fn curve<R: Rng + ?Sized>(
     let along1 = length * rng.random_range(0.2..0.4);
     let along2 = length * rng.random_range(0.6..0.85);
     let p0 = from;
-    let p1 = (from.0 + ux * along1 + px * bend1, from.1 + uy * along1 + py * bend1);
-    let p2 = (from.0 + ux * along2 + px * bend2, from.1 + uy * along2 + py * bend2);
+    let p1 = (
+        from.0 + ux * along1 + px * bend1,
+        from.1 + uy * along1 + py * bend1,
+    );
+    let p2 = (
+        from.0 + ux * along2 + px * bend2,
+        from.1 + uy * along2 + py * bend2,
+    );
     let p3 = to;
 
     let count = ((duration_ms / EVENT_INTERVAL_MS).round() as usize).clamp(3, 400);
@@ -301,7 +346,10 @@ fn curve<R: Rng + ?Sized>(
         } else if tremor_px > 0.0 {
             let fade = (std::f64::consts::PI * t).sin();
             let (zx, zy) = standard_normal_pair(rng);
-            point = (point.0 + zx * tremor_px * fade, point.1 + zy * tremor_px * fade);
+            point = (
+                point.0 + zx * tremor_px * fade,
+                point.1 + zy * tremor_px * fade,
+            );
         }
         if !last_event && dist(point, last) < 0.3 {
             if let Some(prev) = out.last_mut() {
@@ -322,7 +370,10 @@ fn min_jerk(t: f64) -> f64 {
 fn bezier(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), s: f64) -> (f64, f64) {
     let u = 1.0 - s;
     let (a, b, c, d) = (u * u * u, 3.0 * u * u * s, 3.0 * u * s * s, s * s * s);
-    (a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0, a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1)
+    (
+        a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+        a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+    )
 }
 
 fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
@@ -356,14 +407,19 @@ mod tests {
 
     fn samples_with(rect: &Rect, aim: (f64, f64), spread: f64, n: usize) -> Vec<(f64, f64)> {
         let mut rng = rng(7);
-        (0..n).map(|_| human_point(rect, aim, spread, &mut rng)).collect()
+        (0..n)
+            .map(|_| human_point(rect, aim, spread, &mut rng))
+            .collect()
     }
 
     #[test]
     fn every_point_stays_inside_the_box() {
         let rect = Rect::new(100.0, 200.0, 80.0, 30.0);
         for (x, y) in samples(&rect, (140.0, 215.0), 20_000) {
-            assert!((100.0..=180.0).contains(&x) && (200.0..=230.0).contains(&y), "({x}, {y})");
+            assert!(
+                (100.0..=180.0).contains(&x) && (200.0..=230.0).contains(&y),
+                "({x}, {y})"
+            );
         }
     }
 
@@ -375,7 +431,10 @@ mod tests {
 
         let mean_x = pts.iter().map(|p| p.0).sum::<f64>() / n;
         let mean_y = pts.iter().map(|p| p.1).sum::<f64>() / n;
-        assert!((mean_x - 50.0).abs() < 0.5 && (mean_y - 20.0).abs() < 0.3, "({mean_x}, {mean_y})");
+        assert!(
+            (mean_x - 50.0).abs() < 0.5 && (mean_y - 20.0).abs() < 0.3,
+            "({mean_x}, {mean_y})"
+        );
 
         // Middle half of the width: 50% for a uniform draw, ~73% for the truncated normal.
         let middle = pts.iter().filter(|p| (p.0 - 50.0).abs() <= 25.0).count() as f64 / n;
@@ -403,7 +462,10 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 60.0, 60.0);
         for corner in [(0.0, 0.0), (60.0, 0.0), (0.0, 60.0), (60.0, 60.0)] {
             for (x, y) in samples(&rect, corner, 2_000) {
-                assert!((0.0..=60.0).contains(&x) && (0.0..=60.0).contains(&y), "({x}, {y})");
+                assert!(
+                    (0.0..=60.0).contains(&x) && (0.0..=60.0).contains(&y),
+                    "({x}, {y})"
+                );
             }
         }
     }
@@ -411,7 +473,10 @@ mod tests {
     #[test]
     fn a_degenerate_box_returns_its_only_point() {
         let rect = Rect::new(10.0, 10.0, 0.0, 0.0);
-        assert_eq!(human_point(&rect, (10.0, 10.0), 1.0, &mut rng(1)), (10.0, 10.0));
+        assert_eq!(
+            human_point(&rect, (10.0, 10.0), 1.0, &mut rng(1)),
+            (10.0, 10.0)
+        );
     }
 
     fn std_dev_x(pts: &[(f64, f64)], mean: f64) -> f64 {
@@ -423,16 +488,26 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 200.0, 60.0);
         let at = |spread| std_dev_x(&samples_with(&rect, (100.0, 30.0), spread, 20_000), 100.0);
         let (tight, standard, wide) = (at(0.5), at(1.0), at(1.5));
-        assert!(tight < standard && standard < wide, "{tight} {standard} {wide}");
+        assert!(
+            tight < standard && standard < wide,
+            "{tight} {standard} {wide}"
+        );
         // Half the spread is a bit over half the scatter: the standard one is cut by the
         // box edge more than the tight one.
-        assert!((0.5..0.62).contains(&(tight / standard)), "{}", tight / standard);
+        assert!(
+            (0.5..0.62).contains(&(tight / standard)),
+            "{}",
+            tight / standard
+        );
     }
 
     #[test]
     fn the_standard_spread_is_the_original_behaviour() {
         let rect = Rect::new(0.0, 0.0, 100.0, 40.0);
-        assert_eq!(samples(&rect, (50.0, 20.0), 500), samples_with(&rect, (50.0, 20.0), 1.0, 500));
+        assert_eq!(
+            samples(&rect, (50.0, 20.0), 500),
+            samples_with(&rect, (50.0, 20.0), 1.0, 500)
+        );
         assert_eq!(DEFAULT_SPREAD, 1.0);
     }
 
@@ -441,7 +516,10 @@ mod tests {
         let rect = Rect::new(100.0, 200.0, 80.0, 30.0);
         for spread in [MIN_SPREAD, 1.0, MAX_SPREAD, 50.0, f64::NAN] {
             for (x, y) in samples_with(&rect, (170.0, 205.0), spread, 5_000) {
-                assert!((100.0..=180.0).contains(&x) && (200.0..=230.0).contains(&y), "spread {spread}: ({x}, {y})");
+                assert!(
+                    (100.0..=180.0).contains(&x) && (200.0..=230.0).contains(&y),
+                    "spread {spread}: ({x}, {y})"
+                );
             }
         }
     }
@@ -460,7 +538,9 @@ mod tests {
     fn drag_end_jitter_follows_the_spread_too() {
         let sd = |spread| {
             let mut r = rng(8);
-            let pts: Vec<(f64, f64)> = (0..20_000).map(|_| jitter_drag_end((0.0, 0.0), (0.0, -300.0), spread, &mut r)).collect();
+            let pts: Vec<(f64, f64)> = (0..20_000)
+                .map(|_| jitter_drag_end((0.0, 0.0), (0.0, -300.0), spread, &mut r))
+                .collect();
             std_dev_x(&pts, 0.0)
         };
         assert!((sd(2.0) / sd(1.0) - 2.0).abs() < 0.1);
@@ -472,7 +552,10 @@ mod tests {
     fn hold_time_varies_around_the_base_within_bounds() {
         let mut r = rng(3);
         let holds: Vec<f64> = (0..5_000).map(|_| hold_ms(100, &mut r)).collect();
-        assert!(holds.iter().all(|h| (60.0..=180.0).contains(h)), "{holds:?}");
+        assert!(
+            holds.iter().all(|h| (60.0..=180.0).contains(h)),
+            "{holds:?}"
+        );
         let mut sorted = holds.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let median = sorted[sorted.len() / 2];
@@ -491,20 +574,30 @@ mod tests {
     fn farther_and_smaller_targets_take_longer_to_reach() {
         let med = |distance: f64, width: f64| {
             let mut r = rng(11);
-            let mut v: Vec<f64> = (0..501).map(|_| travel_ms(distance, width, &mut r)).collect();
+            let mut v: Vec<f64> = (0..501)
+                .map(|_| travel_ms(distance, width, &mut r))
+                .collect();
             v.sort_by(|a, b| a.partial_cmp(b).unwrap());
             v[250]
         };
         assert!(med(800.0, 60.0) > med(100.0, 60.0));
         assert!(med(400.0, 12.0) > med(400.0, 120.0));
         // 500 px onto a 60 px button: 120 + 110 * log2(1 + 500/60) = ~470 ms.
-        assert!((med(500.0, 60.0) - 470.0).abs() < 40.0, "{}", med(500.0, 60.0));
+        assert!(
+            (med(500.0, 60.0) - 470.0).abs() < 40.0,
+            "{}",
+            med(500.0, 60.0)
+        );
     }
 
     // ---- the path itself
 
     fn path_of(plan: &Plan, action: PointerAction) -> Vec<(f64, f64)> {
-        plan.steps.iter().filter(|s| s.action == action).map(|s| (s.x, s.y)).collect()
+        plan.steps
+            .iter()
+            .filter(|s| s.action == action)
+            .map(|s| (s.x, s.y))
+            .collect()
     }
 
     #[test]
@@ -515,8 +608,13 @@ mod tests {
         assert_eq!(*moves.last().unwrap(), (600.0, 300.0));
 
         let kinds: Vec<_> = plan.steps.iter().map(|s| s.action).collect();
-        assert_eq!(&kinds[kinds.len() - 2..], &[PointerAction::Down, PointerAction::Up]);
-        assert!(kinds[..kinds.len() - 2].iter().all(|k| *k == PointerAction::Move));
+        assert_eq!(
+            &kinds[kinds.len() - 2..],
+            &[PointerAction::Down, PointerAction::Up]
+        );
+        assert!(kinds[..kinds.len() - 2]
+            .iter()
+            .all(|k| *k == PointerAction::Move));
 
         // The press and release are at the same place, and the press is held.
         let n = plan.steps.len();
@@ -532,12 +630,18 @@ mod tests {
         let mut bent = 0;
         for seed in 0..40 {
             let plan = plan_click(Some((0.0, 0.0)), (600.0, 0.0), 60.0, 60, &mut rng(seed));
-            let off = path_of(&plan, PointerAction::Move).iter().map(|p| p.1.abs()).fold(0.0, f64::max);
+            let off = path_of(&plan, PointerAction::Move)
+                .iter()
+                .map(|p| p.1.abs())
+                .fold(0.0, f64::max);
             if off > 8.0 {
                 bent += 1;
             }
         }
-        assert!(bent >= 30, "only {bent}/40 paths bent away from the straight line");
+        assert!(
+            bent >= 30,
+            "only {bent}/40 paths bent away from the straight line"
+        );
     }
 
     #[test]
@@ -546,7 +650,11 @@ mod tests {
         let times_and_points: Vec<(f64, (f64, f64))> = {
             let mut t = 0.0;
             let mut v = vec![];
-            for s in plan.steps.iter().filter(|s| s.action == PointerAction::Move) {
+            for s in plan
+                .steps
+                .iter()
+                .filter(|s| s.action == PointerAction::Move)
+            {
                 t += s.wait_ms;
                 v.push((t, (s.x, s.y)));
             }
@@ -567,16 +675,27 @@ mod tests {
     fn the_total_travel_time_matches_the_waits() {
         for seed in 0..20 {
             let plan = plan_click(Some((0.0, 0.0)), (300.0, 200.0), 50.0, 60, &mut rng(seed));
-            let moved: f64 = plan.steps.iter().filter(|s| s.action == PointerAction::Move).map(|s| s.wait_ms).sum();
+            let moved: f64 = plan
+                .steps
+                .iter()
+                .filter(|s| s.action == PointerAction::Move)
+                .map(|s| s.wait_ms)
+                .sum();
             // Moves also carry the hesitation (25..250 ms) after arriving.
-            assert!(moved >= plan.travel_ms - 1e-6 && moved <= plan.travel_ms + 250.0 + 1e-6, "{moved} vs {}", plan.travel_ms);
+            assert!(
+                moved >= plan.travel_ms - 1e-6 && moved <= plan.travel_ms + 250.0 + 1e-6,
+                "{moved} vs {}",
+                plan.travel_ms
+            );
         }
     }
 
     #[test]
     fn long_trips_sometimes_overshoot_and_come_back_short_ones_never_do() {
         let overshoots = |from: (f64, f64), to: (f64, f64)| {
-            (0..400).filter(|seed| plan_click(Some(from), to, 60.0, 60, &mut rng(*seed)).overshoot).count()
+            (0..400)
+                .filter(|seed| plan_click(Some(from), to, 60.0, 60, &mut rng(*seed)).overshoot)
+                .count()
         };
         let long = overshoots((0.0, 0.0), (900.0, 0.0));
         assert!((80..=160).contains(&long), "{long}/400 overshot");
@@ -587,7 +706,10 @@ mod tests {
             .map(|seed| plan_click(Some((0.0, 0.0)), (900.0, 0.0), 60.0, 60, &mut rng(seed)))
             .find(|p| p.overshoot)
             .unwrap();
-        let xs: Vec<f64> = path_of(&plan, PointerAction::Move).iter().map(|p| p.0).collect();
+        let xs: Vec<f64> = path_of(&plan, PointerAction::Move)
+            .iter()
+            .map(|p| p.0)
+            .collect();
         let max = xs.iter().cloned().fold(f64::MIN, f64::max);
         assert!(max > 903.9 && max < 931.0, "{max}");
         assert_eq!(*xs.last().unwrap(), 900.0);
@@ -620,13 +742,31 @@ mod tests {
 
     #[test]
     fn a_drag_presses_strokes_along_an_arc_and_releases_at_the_end() {
-        let plan = plan_drag(Some((50.0, 50.0)), (200.0, 500.0), 60.0, (200.0, 200.0), 300, &mut rng(4));
+        let plan = plan_drag(
+            Some((50.0, 50.0)),
+            (200.0, 500.0),
+            60.0,
+            (200.0, 200.0),
+            300,
+            &mut rng(4),
+        );
         let kinds: Vec<_> = plan.steps.iter().map(|s| s.action).collect();
-        let down = kinds.iter().position(|k| *k == PointerAction::Down).unwrap();
+        let down = kinds
+            .iter()
+            .position(|k| *k == PointerAction::Down)
+            .unwrap();
         assert!(kinds[..down].iter().all(|k| *k == PointerAction::Move));
-        assert!(kinds[down + 1..kinds.len() - 1].iter().all(|k| *k == PointerAction::Drag));
+        assert!(kinds[down + 1..kinds.len() - 1]
+            .iter()
+            .all(|k| *k == PointerAction::Drag));
         assert_eq!(*kinds.last().unwrap(), PointerAction::Up);
-        assert_eq!(plan.steps.iter().filter(|s| s.action == PointerAction::Down).count(), 1);
+        assert_eq!(
+            plan.steps
+                .iter()
+                .filter(|s| s.action == PointerAction::Down)
+                .count(),
+            1
+        );
 
         assert_eq!((plan.steps[down].x, plan.steps[down].y), (200.0, 500.0));
         let up = plan.steps.last().unwrap();
@@ -635,15 +775,22 @@ mod tests {
         assert!(drags.len() > 15, "{}", drags.len());
         assert_eq!(*drags.last().unwrap(), (200.0, 200.0));
         // Stroke time is the jittered duration: 0.8x..1.35x of 300 ms.
-        assert!(plan.hold_ms >= 240.0 && plan.hold_ms <= 405.0, "{}", plan.hold_ms);
+        assert!(
+            plan.hold_ms >= 240.0 && plan.hold_ms <= 405.0,
+            "{}",
+            plan.hold_ms
+        );
     }
 
     #[test]
     fn drag_durations_vary_from_run_to_run() {
         let durations: Vec<f64> = (0..100)
-            .map(|seed| plan_drag(None, (0.0, 0.0), 60.0, (0.0, 300.0), 300, &mut rng(seed)).hold_ms)
+            .map(|seed| {
+                plan_drag(None, (0.0, 0.0), 60.0, (0.0, 300.0), 300, &mut rng(seed)).hold_ms
+            })
             .collect();
-        let spread = durations.iter().cloned().fold(f64::MIN, f64::max) - durations.iter().cloned().fold(f64::MAX, f64::min);
+        let spread = durations.iter().cloned().fold(f64::MIN, f64::max)
+            - durations.iter().cloned().fold(f64::MAX, f64::min);
         assert!(spread > 30.0, "{spread}");
     }
 
@@ -657,7 +804,9 @@ mod tests {
     fn drag_end_jitter_is_centred_and_proportional_to_the_length() {
         let mut r = rng(8);
         let n = 20_000;
-        let pts: Vec<(f64, f64)> = (0..n).map(|_| jitter_drag_end((0.0, 0.0), (0.0, -300.0), 1.0, &mut r)).collect();
+        let pts: Vec<(f64, f64)> = (0..n)
+            .map(|_| jitter_drag_end((0.0, 0.0), (0.0, -300.0), 1.0, &mut r))
+            .collect();
         let mx = pts.iter().map(|p| p.0).sum::<f64>() / n as f64;
         let my = pts.iter().map(|p| p.1).sum::<f64>() / n as f64;
         assert!(mx.abs() < 0.3 && (my + 300.0).abs() < 0.3, "({mx}, {my})");

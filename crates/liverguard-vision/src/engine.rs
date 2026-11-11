@@ -2,10 +2,10 @@
 
 use std::time::Instant;
 
-use opencv::prelude::*;
-use opencv::core::Mat;
 use liverguard_ir::geometry::{point_in_box, py_round, roi_to_pixels, Rect};
 use liverguard_ir::{Multi, PointTarget, Strategy, Target, TemplateTarget, Verify};
+use opencv::core::Mat;
+use opencv::prelude::*;
 
 use crate::assets::AssetStore;
 use crate::frame::Frame;
@@ -34,11 +34,23 @@ pub struct Hit {
 /// Anything that can turn a target into a clickable hit. The interpreter only
 /// sees this trait, which keeps run logic testable without real matching.
 pub trait Resolver {
-    fn resolve(&mut self, target: &Target, target_id: &str, frame: &Frame, offset: (f64, f64)) -> Result<Option<Hit>>;
+    fn resolve(
+        &mut self,
+        target: &Target,
+        target_id: &str,
+        frame: &Frame,
+        offset: (f64, f64),
+    ) -> Result<Option<Hit>>;
 }
 
 impl Resolver for MatcherEngine {
-    fn resolve(&mut self, target: &Target, target_id: &str, frame: &Frame, offset: (f64, f64)) -> Result<Option<Hit>> {
+    fn resolve(
+        &mut self,
+        target: &Target,
+        target_id: &str,
+        frame: &Frame,
+        offset: (f64, f64),
+    ) -> Result<Option<Hit>> {
         MatcherEngine::resolve(self, target, target_id, frame, offset)
     }
 }
@@ -52,11 +64,19 @@ pub struct MatcherEngine {
 
 impl MatcherEngine {
     pub fn new(assets: AssetStore) -> Self {
-        Self { assets, tracker: Tracker::default(), canonical_width: CANONICAL_WIDTH, allow_reuse: true }
+        Self {
+            assets,
+            tracker: Tracker::default(),
+            canonical_width: CANONICAL_WIDTH,
+            allow_reuse: true,
+        }
     }
 
     pub fn without_reuse(assets: AssetStore) -> Self {
-        Self { allow_reuse: false, ..Self::new(assets) }
+        Self {
+            allow_reuse: false,
+            ..Self::new(assets)
+        }
     }
 
     /// `offset` is a jitter as a fraction of the matched box, applied to the
@@ -72,7 +92,9 @@ impl MatcherEngine {
         let started = Instant::now();
         match target {
             Target::Point(point) => Ok(resolve_point(point, frame, offset, started)),
-            Target::Template(template) => self.resolve_template(template, target_id, frame, offset, started),
+            Target::Template(template) => {
+                self.resolve_template(template, target_id, frame, offset, started)
+            }
         }
     }
 
@@ -91,7 +113,10 @@ impl MatcherEngine {
             if let Some(remembered) = self.tracker.reusable(target_id, &frame_hash) {
                 let mut point = remembered.point;
                 if offset != (0.0, 0.0) {
-                    point = (point.0 + offset.0 * remembered.rect.w, point.1 + offset.1 * remembered.rect.h);
+                    point = (
+                        point.0 + offset.0 * remembered.rect.w,
+                        point.1 + offset.1 * remembered.rect.h,
+                    );
                 }
                 return Ok(Some(Hit {
                     rect: remembered.rect,
@@ -106,7 +131,12 @@ impl MatcherEngine {
         }
 
         let normalized = frame.normalized(self.canonical_width)?;
-        let factor = template_factor(target.record_width, target.record_scale, frame.bounds.w, self.canonical_width);
+        let factor = template_factor(
+            target.record_width,
+            target.record_scale,
+            frame.bounds.w,
+            self.canonical_width,
+        );
         let template_raw = match self.assets.get_scaled(&target.asset, factor) {
             Ok(template) => template,
             Err(_) => return Ok(None),
@@ -130,9 +160,16 @@ impl MatcherEngine {
         }
 
         let scored = self.verify(target, matches, &search_raw, &template_raw, &mut warnings)?;
-        let Some(chosen) = self.select(target, scored, &search_raw, target_id) else { return Ok(None) };
+        let Some(chosen) = self.select(target, scored, &search_raw, target_id) else {
+            return Ok(None);
+        };
 
-        let rect = normalized.rect_to_logical(origin.0 as f64 + chosen.x, origin.1 as f64 + chosen.y, chosen.w, chosen.h);
+        let rect = normalized.rect_to_logical(
+            origin.0 as f64 + chosen.x,
+            origin.1 as f64 + chosen.y,
+            chosen.w,
+            chosen.h,
+        );
         let mut point = point_in_box((target.anchor[0], target.anchor[1]), &rect);
         point = (point.0 + offset.0 * rect.w, point.1 + offset.1 * rect.h);
 
@@ -149,7 +186,8 @@ impl MatcherEngine {
             reused: false,
             warnings,
         };
-        self.tracker.remember(target_id, &frame_hash, hit.rect, hit.score, hit.point);
+        self.tracker
+            .remember(target_id, &frame_hash, hit.rect, hit.score, hit.point);
         Ok(Some(hit))
     }
 
@@ -204,12 +242,22 @@ impl MatcherEngine {
         Ok(vec![])
     }
 
-    fn select(&self, target: &TemplateTarget, matches: Vec<Match>, search: &Mat, target_id: &str) -> Option<Match> {
+    fn select(
+        &self,
+        target: &TemplateTarget,
+        matches: Vec<Match>,
+        search: &Mat,
+        target_id: &str,
+    ) -> Option<Match> {
         if matches.is_empty() {
             return None;
         }
         let mut ordered = matches;
-        ordered.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        ordered.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         match target.multi {
             Multi::Highest => return ordered.first().copied(),
@@ -222,7 +270,9 @@ impl MatcherEngine {
             Multi::Center => {
                 let (cx, cy) = (search.cols() as f64 / 2.0, search.rows() as f64 / 2.0);
                 return ordered.into_iter().min_by(|a, b| {
-                    dist2(a.center(), (cx, cy)).partial_cmp(&dist2(b.center(), (cx, cy))).unwrap()
+                    dist2(a.center(), (cx, cy))
+                        .partial_cmp(&dist2(b.center(), (cx, cy)))
+                        .unwrap()
                 });
             }
             Multi::NearestLast => {}
@@ -232,7 +282,9 @@ impl MatcherEngine {
         if let Some(last) = self.tracker.last_rect(target_id) {
             let anchor = last.center();
             return ordered.into_iter().min_by(|a, b| {
-                dist2(a.center(), anchor).partial_cmp(&dist2(b.center(), anchor)).unwrap()
+                dist2(a.center(), anchor)
+                    .partial_cmp(&dist2(b.center(), anchor))
+                    .unwrap()
             });
         }
         ordered.first().copied()
@@ -247,12 +299,22 @@ fn elapsed_ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1000.0
 }
 
-fn resolve_point(target: &PointTarget, frame: &Frame, offset: (f64, f64), started: Instant) -> Option<Hit> {
+fn resolve_point(
+    target: &PointTarget,
+    frame: &Frame,
+    offset: (f64, f64),
+    started: Instant,
+) -> Option<Hit> {
     let b = &frame.bounds;
     let x = b.x + target.norm[0] * b.w;
     let y = b.y + target.norm[1] * b.h;
     let zone = target.zone;
-    let rect = Rect::new(b.x + zone[0] * b.w, b.y + zone[1] * b.h, zone[2] * b.w, zone[3] * b.h);
+    let rect = Rect::new(
+        b.x + zone[0] * b.w,
+        b.y + zone[1] * b.h,
+        zone[2] * b.w,
+        zone[3] * b.h,
+    );
     if !rect.contains(x, y) {
         return None;
     }
@@ -272,7 +334,11 @@ fn search_region(normalized: &Normalized, target: &TemplateTarget) -> Result<(Ma
     Ok((crop(&normalized.image, x, y, w, h)?, (x, y)))
 }
 
-fn run_strategies(target: &TemplateTarget, search: &Mat, template: &Mat) -> Result<(Vec<Match>, String)> {
+fn run_strategies(
+    target: &TemplateTarget,
+    search: &Mat,
+    template: &Mat,
+) -> Result<(Vec<Match>, String)> {
     let mut tried: Vec<&str> = Vec::new();
     let mut matches = Vec::new();
     let floor = target.warn_threshold.max(0.4);
@@ -285,7 +351,8 @@ fn run_strategies(target: &TemplateTarget, search: &Mat, template: &Mat) -> Resu
             }
             Strategy::Mstpl => {
                 tried.push("mstpl");
-                matches = multi_scale_match(search, template, &scale_ladder(&target.scale), floor, 3)?;
+                matches =
+                    multi_scale_match(search, template, &scale_ladder(&target.scale), floor, 3)?;
             }
             Strategy::Sift => {
                 tried.push("sift");

@@ -5,7 +5,9 @@
 //! the template strategies miss, and still inside the target's search region.
 
 use opencv::calib3d;
-use opencv::core::{no_array, DMatch, KeyPoint, Mat, MatTraitConst, Point2f, Size, Vector, NORM_L2};
+use opencv::core::{
+    no_array, DMatch, KeyPoint, Mat, MatTraitConst, Point2f, Size, Vector, NORM_L2,
+};
 use opencv::features2d::{BFMatcher, Feature2DTrait, SIFT};
 use opencv::imgproc;
 use opencv::prelude::*;
@@ -26,7 +28,10 @@ fn prepare(image: &Mat) -> Result<Mat> {
         imgproc::resize(
             &gray,
             &mut small,
-            Size::new((width as f64 * factor) as i32, (height as f64 * factor) as i32),
+            Size::new(
+                (width as f64 * factor) as i32,
+                (height as f64 * factor) as i32,
+            ),
             0.0,
             0.0,
             imgproc::INTER_AREA,
@@ -70,15 +75,23 @@ fn feature_match_inner(search: &Mat, template: &Mat, threshold: f64) -> Result<V
 
     let good: Vec<DMatch> = knn
         .iter()
-        .filter(|pair| pair.len() == 2 && pair.get(0).unwrap().distance < RATIO * pair.get(1).unwrap().distance)
+        .filter(|pair| {
+            pair.len() == 2 && pair.get(0).unwrap().distance < RATIO * pair.get(1).unwrap().distance
+        })
         .map(|pair| pair.get(0).unwrap())
         .collect();
     if good.len() < MIN_GOOD {
         return Ok(vec![]);
     }
 
-    let src: Vector<Point2f> = good.iter().map(|m| kp1.get(m.query_idx as usize).unwrap().pt()).collect();
-    let dst: Vector<Point2f> = good.iter().map(|m| kp2.get(m.train_idx as usize).unwrap().pt()).collect();
+    let src: Vector<Point2f> = good
+        .iter()
+        .map(|m| kp1.get(m.query_idx as usize).unwrap().pt())
+        .collect();
+    let dst: Vector<Point2f> = good
+        .iter()
+        .map(|m| kp2.get(m.train_idx as usize).unwrap().pt())
+        .collect();
 
     let mut mask = Mat::default();
     let homography = calib3d::find_homography(&src, &dst, &mut mask, calib3d::RANSAC, 5.0)?;

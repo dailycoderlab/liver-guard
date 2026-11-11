@@ -127,7 +127,8 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Export { script, out } => export(&store, &script, out),
         Command::NotifyTest => {
             let config = store.load_settings()?.notify;
-            liverguard_notify::send(&config, &liverguard_notify::test_message()).map_err(|e| anyhow!("{e}"))?;
+            liverguard_notify::send(&config, &liverguard_notify::test_message())
+                .map_err(|e| anyhow!("{e}"))?;
             println!("测试通知已发送（接收方：{:?}）", config.channel);
             Ok(ExitCode::SUCCESS)
         }
@@ -139,7 +140,10 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Schema => {
-            println!("{}", serde_json::to_string_pretty(&liverguard_ir::json_schema())?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&liverguard_ir::json_schema())?
+            );
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -172,14 +176,23 @@ fn doctor(window: Option<&str>) -> Result<ExitCode> {
             return Ok(ExitCode::from(1));
         }
     }
-    Ok(if permissions_ok { ExitCode::SUCCESS } else { ExitCode::from(1) })
+    Ok(if permissions_ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 fn capture(out: &PathBuf, window: Option<&str>) -> Result<ExitCode> {
     let mut driver = platform::make_driver(window)?;
     let frame = driver.capture().map_err(|e| anyhow!("{e}"))?;
     std::fs::write(out, frame.to_png().map_err(|e| anyhow!("{e}"))?)?;
-    println!("saved {} ({}x{} px)", out.display(), frame.width(), frame.height());
+    println!(
+        "saved {} ({}x{} px)",
+        out.display(),
+        frame.width(),
+        frame.height()
+    );
     Ok(ExitCode::SUCCESS)
 }
 
@@ -188,10 +201,17 @@ fn script_id(store: &LocalStore, wanted: &str) -> Result<String> {
     if store.get_script(wanted).is_ok() {
         return Ok(wanted.to_string());
     }
-    let matches: Vec<_> = store.list_scripts()?.into_iter().filter(|s| s.name == wanted).collect();
+    let matches: Vec<_> = store
+        .list_scripts()?
+        .into_iter()
+        .filter(|s| s.name == wanted)
+        .collect();
     match matches.as_slice() {
         [one] => Ok(one.id.clone()),
-        [] => bail!("no script with id or name \"{wanted}\" in {}", store.root().display()),
+        [] => bail!(
+            "no script with id or name \"{wanted}\" in {}",
+            store.root().display()
+        ),
         _ => bail!("several scripts are named \"{wanted}\"; use the id"),
     }
 }
@@ -199,11 +219,27 @@ fn script_id(store: &LocalStore, wanted: &str) -> Result<String> {
 fn export(store: &LocalStore, wanted: &str, out: Option<PathBuf>) -> Result<ExitCode> {
     let bundle = store.export_script(&script_id(store, wanted)?)?;
     let path = out.unwrap_or_else(|| {
-        let safe: String = bundle.name.chars().map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c }).collect();
+        let safe: String = bundle
+            .name
+            .chars()
+            .map(|c| {
+                if c.is_control() || "/\\:*?\"<>|".contains(c) {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .collect();
         PathBuf::from(format!("{}.liverguard.json", safe.trim().trim_matches('.')))
     });
-    std::fs::write(&path, serde_json::to_vec_pretty(&bundle)?).with_context(|| format!("writing {}", path.display()))?;
-    println!("exported \"{}\" ({} images) to {}", bundle.name, bundle.assets.len(), path.display());
+    std::fs::write(&path, serde_json::to_vec_pretty(&bundle)?)
+        .with_context(|| format!("writing {}", path.display()))?;
+    println!(
+        "exported \"{}\" ({} images) to {}",
+        bundle.name,
+        bundle.assets.len(),
+        path.display()
+    );
     Ok(ExitCode::SUCCESS)
 }
 
@@ -216,27 +252,44 @@ fn import(store: &LocalStore, file: &PathBuf) -> Result<ExitCode> {
 
 fn load_script(store: &LocalStore, args: &RunArgs) -> Result<IrDoc> {
     if let Some(path) = &args.file {
-        let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         return serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()));
     }
     let wanted = args.script.as_deref().unwrap_or_default();
     if let Ok(record) = store.get_script(wanted) {
         return Ok(record.ir);
     }
-    let matches: Vec<_> = store.list_scripts()?.into_iter().filter(|s| s.name == wanted).collect();
+    let matches: Vec<_> = store
+        .list_scripts()?
+        .into_iter()
+        .filter(|s| s.name == wanted)
+        .collect();
     match matches.as_slice() {
         [one] => Ok(store.get_script(&one.id)?.ir),
-        [] => bail!("no script with id or name \"{wanted}\" in {}", store.root().display()),
+        [] => bail!(
+            "no script with id or name \"{wanted}\" in {}",
+            store.root().display()
+        ),
         _ => bail!("several scripts are named \"{wanted}\"; use the id"),
     }
 }
 
 fn print_event(event: &RunEvent) {
-    if let RunEvent::Log { level, event, payload } = event {
+    if let RunEvent::Log {
+        level,
+        event,
+        payload,
+    } = event
+    {
         if level == "debug" {
             return;
         }
-        let payload = if payload.is_null() { String::new() } else { payload.to_string() };
+        let payload = if payload.is_null() {
+            String::new()
+        } else {
+            payload.to_string()
+        };
         eprintln!("[{level}] {event} {payload}");
     }
 }
@@ -250,12 +303,17 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
         let rows = liverguard_engine::probe(&ir, &mut *driver, assets).map_err(|e| anyhow!(e))?;
         println!("{}", serde_json::to_string_pretty(&rows)?);
         let all_ok = rows.iter().all(|row| row.ok);
-        return Ok(if all_ok { ExitCode::SUCCESS } else { ExitCode::from(1) });
+        return Ok(if all_ok {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        });
     }
 
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
-    ctrlc::set_handler(move || flag.store(true, Ordering::Relaxed)).context("installing Ctrl-C handler")?;
+    ctrlc::set_handler(move || flag.store(true, Ordering::Relaxed))
+        .context("installing Ctrl-C handler")?;
     if let Some(seconds) = args.max_seconds {
         let flag = stop.clone();
         std::thread::spawn(move || {
@@ -265,10 +323,26 @@ fn run(store: &LocalStore, args: RunArgs, dry: bool) -> Result<ExitCode> {
     }
 
     // Failure alerts come from the settings the desktop app saved (same store, same file).
-    let alert = if args.no_notify { None } else { Some(store.load_settings()?.notify).filter(|n| n.is_enabled()) };
+    let alert = if args.no_notify {
+        None
+    } else {
+        Some(store.load_settings()?.notify).filter(|n| n.is_enabled())
+    };
     let run_id = uuid::Uuid::new_v4().simple().to_string();
     let sink: EventSink = Arc::new(print_event);
-    let (result, reporter) = liverguard_engine::run_local(&ir, &mut *driver, assets, &run_id, stop, liverguard_engine::RunOptions { sink: Some(sink), rounds: args.repeat, alert }).map_err(|e| anyhow!(e))?;
+    let (result, reporter) = liverguard_engine::run_local(
+        &ir,
+        &mut *driver,
+        assets,
+        &run_id,
+        stop,
+        liverguard_engine::RunOptions {
+            sink: Some(sink),
+            rounds: args.repeat,
+            alert,
+        },
+    )
+    .map_err(|e| anyhow!(e))?;
 
     let jsonl = reporter.jsonl();
     if let Some(path) = &args.log {

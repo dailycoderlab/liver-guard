@@ -14,17 +14,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rand::Rng;
-use serde_json::json;
 use liverguard_ir::node::handle;
 use liverguard_ir::{
     CompareOp, Condition, Flow, IrDoc, LoopMode, Node, NodeKind, SwipeData, Target, VarValue,
 };
 use liverguard_vision::{Frame, Hit, Resolver};
+use rand::Rng;
+use serde_json::json;
 
 use crate::driver::{Driver, PointerAction};
-use crate::human;
 use crate::error::{Reason, RunError, RunResultOf};
+use crate::human;
 use crate::report::{now_ms, NodeState, Reporter};
 
 pub const MAX_STEPS: u64 = 200_000;
@@ -158,7 +158,11 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Like `set_alert` with a custom delivery function (tests).
-    pub fn set_alert_with(&mut self, config: liverguard_notify::NotifyConfig, sender: crate::alert::AlertSender) {
+    pub fn set_alert_with(
+        &mut self,
+        config: liverguard_notify::NotifyConfig,
+        sender: crate::alert::AlertSender,
+    ) {
         self.alert = config.is_enabled().then_some((config, sender));
     }
 
@@ -174,7 +178,8 @@ impl<'a> Interpreter<'a> {
 
     pub fn run(&mut self) -> RunResult {
         let started_at = now_ms();
-        self.reporter.log("info", "run_start", json!({ "script": self.ir.meta.name }));
+        self.reporter
+            .log("info", "run_start", json!({ "script": self.ir.meta.name }));
 
         let outcome = self.run_rounds();
         let mut result = RunResult {
@@ -188,9 +193,14 @@ impl<'a> Interpreter<'a> {
         };
 
         match outcome {
-            Ok(_) => self.reporter.log("info", "run_done", json!({ "steps": self.step_count, "rounds": self.rounds })),
+            Ok(_) => self.reporter.log(
+                "info",
+                "run_done",
+                json!({ "steps": self.step_count, "rounds": self.rounds }),
+            ),
             Err(error) if error.reason == Reason::Stopped => {
-                self.reporter.log("info", "run_stopped", json!({ "node": error.node_id }));
+                self.reporter
+                    .log("info", "run_stopped", json!({ "node": error.node_id }));
                 result.state = RunState::Stopped;
                 result.error_code = Some(Reason::Stopped.as_str().into());
                 result.error_msg = Some(error.message);
@@ -221,15 +231,27 @@ impl<'a> Interpreter<'a> {
     /// Tell the configured webhook how the run ended: a failure alert for `Failed`, the
     /// loop-done notice for `Done`. Delivery trouble is only logged.
     fn notify(&mut self, result: &RunResult) {
-        let Some((config, sender)) = self.alert.clone() else { return };
+        let Some((config, sender)) = self.alert.clone() else {
+            return;
+        };
         let message = match result.state {
-            RunState::Failed => crate::alert::failure_message(self.ir, result, self.round, self.rounds),
+            RunState::Failed => {
+                crate::alert::failure_message(self.ir, result, self.round, self.rounds)
+            }
             RunState::Done => crate::alert::loop_done_message(self.ir, result, self.rounds),
             _ => return,
         };
         match sender(&config, &message) {
-            Ok(()) => self.reporter.log("info", "alert_sent", json!({ "event": message.event, "round": self.round })),
-            Err(error) => self.reporter.log("warn", "alert_failed", json!({ "event": message.event, "message": error.to_string() })),
+            Ok(()) => self.reporter.log(
+                "info",
+                "alert_sent",
+                json!({ "event": message.event, "round": self.round }),
+            ),
+            Err(error) => self.reporter.log(
+                "warn",
+                "alert_failed",
+                json!({ "event": message.event, "message": error.to_string() }),
+            ),
         }
     }
 
@@ -243,7 +265,11 @@ impl<'a> Interpreter<'a> {
             self.round = round;
             self.begin_round();
             if rounds > 1 {
-                self.reporter.log("info", "round_start", json!({ "round": round, "total": rounds }));
+                self.reporter.log(
+                    "info",
+                    "round_start",
+                    json!({ "round": round, "total": rounds }),
+                );
             }
             last = self.run_graph()?;
         }
@@ -264,7 +290,9 @@ impl<'a> Interpreter<'a> {
     fn run_graph(&mut self) -> RunResultOf<ChainEnd> {
         let ir = self.ir;
         let flow = &ir.flow;
-        let start = flow.start().ok_or_else(|| RunError::new(Reason::BadStep, "script has no start node"))?;
+        let start = flow
+            .start()
+            .ok_or_else(|| RunError::new(Reason::BadStep, "script has no start node"))?;
         self.run_chain(flow, Some(start.id.as_str()))
     }
 
@@ -272,14 +300,18 @@ impl<'a> Interpreter<'a> {
     fn run_chain(&mut self, flow: &'a Flow, first: Option<&'a str>) -> RunResultOf<ChainEnd> {
         let mut current = first;
         while let Some(id) = current {
-            let node = flow
-                .node(id)
-                .ok_or_else(|| RunError::new(Reason::BadStep, format!("edge points at unknown node \"{id}\"")))?;
+            let node = flow.node(id).ok_or_else(|| {
+                RunError::new(
+                    Reason::BadStep,
+                    format!("edge points at unknown node \"{id}\""),
+                )
+            })?;
             self.tick(node)?;
 
             let is_start = matches!(node.kind, NodeKind::Start(_));
             if !is_start {
-                self.reporter.node(&node.id, NodeState::Running, None, None, None);
+                self.reporter
+                    .node(&node.id, NodeState::Running, None, None, None);
             }
 
             let outcome = match self.exec(flow, node) {
@@ -293,20 +325,33 @@ impl<'a> Interpreter<'a> {
                                 "routed_failure",
                                 json!({ "nodeId": node.id, "reason": error.reason.as_str(), "handle": route, "message": error.message }),
                             );
-                            self.reporter.node(&node.id, NodeState::Failed, None, None, Some(error.message.clone()));
+                            self.reporter.node(
+                                &node.id,
+                                NodeState::Failed,
+                                None,
+                                None,
+                                Some(error.message.clone()),
+                            );
                             self.count_step()?;
                             current = flow.next(&node.id, route);
                             continue;
                         }
                     }
-                    self.reporter.node(&node.id, NodeState::Failed, None, None, Some(error.message.clone()));
+                    self.reporter.node(
+                        &node.id,
+                        NodeState::Failed,
+                        None,
+                        None,
+                        Some(error.message.clone()),
+                    );
                     self.count_step().ok();
                     return Err(error);
                 }
             };
 
             if !is_start {
-                self.reporter.node(&node.id, NodeState::Ok, None, None, None);
+                self.reporter
+                    .node(&node.id, NodeState::Ok, None, None, None);
                 self.count_step()?;
             }
 
@@ -323,7 +368,10 @@ impl<'a> Interpreter<'a> {
         self.step_count += 1;
         // The cap guards one round against a runaway graph; many rounds may add up to more.
         if self.step_count - self.round_first_step > MAX_STEPS {
-            return Err(RunError::new(Reason::StepLimit, format!("exceeded {MAX_STEPS} steps")));
+            return Err(RunError::new(
+                Reason::StepLimit,
+                format!("exceeded {MAX_STEPS} steps"),
+            ));
         }
         Ok(())
     }
@@ -334,7 +382,11 @@ impl<'a> Interpreter<'a> {
         *visits += 1;
         if let Some(limit) = node.max_visits {
             if *visits > limit {
-                return Err(RunError::at(Reason::VisitLimit, format!("node ran more than {limit} times"), &node.id));
+                return Err(RunError::at(
+                    Reason::VisitLimit,
+                    format!("node ran more than {limit} times"),
+                    &node.id,
+                ));
             }
         }
         Ok(())
@@ -398,11 +450,21 @@ impl<'a> Interpreter<'a> {
     /// found when `enforce_threshold` is set, because an injected click cannot
     /// be undone. Waiting-for-disappearance and conditions pass `false`: for
     /// them a low score means the screen is changing, not that the control left.
-    fn find(&mut self, name: &str, node_id: &str, warn: bool, enforce_threshold: bool) -> RunResultOf<Option<Hit>> {
+    fn find(
+        &mut self,
+        name: &str,
+        node_id: &str,
+        warn: bool,
+        enforce_threshold: bool,
+    ) -> RunResultOf<Option<Hit>> {
         let ir = self.ir;
-        let target = ir
-            .target(name)
-            .ok_or_else(|| RunError::at(Reason::UnknownTarget, format!("target \"{name}\" is not defined"), node_id))?;
+        let target = ir.target(name).ok_or_else(|| {
+            RunError::at(
+                Reason::UnknownTarget,
+                format!("target \"{name}\" is not defined"),
+                node_id,
+            )
+        })?;
 
         let frame = self.frame(false)?;
         let hit = self.engine.resolve(target, name, &frame, (0.0, 0.0))?;
@@ -411,7 +473,8 @@ impl<'a> Interpreter<'a> {
             return Ok(None);
         };
 
-        self.reporter.score(node_id, name, hit.score, hit.elapsed_ms);
+        self.reporter
+            .score(node_id, name, hit.score, hit.elapsed_ms);
 
         let (threshold, warn_threshold) = match target {
             Target::Template(t) => (t.threshold, t.warn_threshold),
@@ -420,7 +483,10 @@ impl<'a> Interpreter<'a> {
         };
 
         if enforce_threshold && hit.score < threshold {
-            self.reject = Some(format!("target \"{name}\" matched at {:.3}, below threshold {:.2}", hit.score, threshold));
+            self.reject = Some(format!(
+                "target \"{name}\" matched at {:.3}, below threshold {:.2}",
+                hit.score, threshold
+            ));
             // A rejected match is worth reporting: it usually means the crop is
             // slightly off or the UI changed, not that nothing is there.
             self.reporter.log(
@@ -444,7 +510,11 @@ impl<'a> Interpreter<'a> {
             );
         }
         if !hit.warnings.is_empty() {
-            self.reporter.log("debug", "match_warnings", json!({ "stepId": node_id, "target": name, "warnings": hit.warnings }));
+            self.reporter.log(
+                "debug",
+                "match_warnings",
+                json!({ "stepId": node_id, "target": name, "warnings": hit.warnings }),
+            );
         }
         Ok(Some(hit))
     }
@@ -454,7 +524,9 @@ impl<'a> Interpreter<'a> {
             Some(hit) => Ok(hit),
             None => Err(RunError::at(
                 Reason::NotFound,
-                self.reject.clone().unwrap_or_else(|| format!("target \"{name}\" not found")),
+                self.reject
+                    .clone()
+                    .unwrap_or_else(|| format!("target \"{name}\" not found")),
                 node_id,
             )),
         }
@@ -466,7 +538,11 @@ impl<'a> Interpreter<'a> {
     /// hash describes the screen *after* the action.
     fn record_action(&mut self, node_id: &str, name: Option<&str>) -> RunResultOf<()> {
         self.invalidate();
-        let current = self.frame(false)?.hash().map_err(RunError::from)?.to_string();
+        let current = self
+            .frame(false)?
+            .hash()
+            .map_err(RunError::from)?
+            .to_string();
         if self.last_action_hash.as_deref() == Some(current.as_str()) {
             self.stagnation += 1;
             if self.stagnation >= STAGNATION_LIMIT {
@@ -476,7 +552,11 @@ impl<'a> Interpreter<'a> {
                     node_id,
                 ));
             }
-            self.reporter.log("debug", "no_screen_change", json!({ "stepId": node_id, "target": name, "count": self.stagnation }));
+            self.reporter.log(
+                "debug",
+                "no_screen_change",
+                json!({ "stepId": node_id, "target": name, "count": self.stagnation }),
+            );
         } else {
             self.stagnation = 0;
         }
@@ -494,12 +574,26 @@ impl<'a> Interpreter<'a> {
             NodeKind::End(_) => Ok(Outcome::End),
             NodeKind::Tap(data) => {
                 let hit = self.require(&data.target, id)?;
-                self.click(id, &data.target, &hit, data.duration_ms, data.human, data.spread)?;
+                self.click(
+                    id,
+                    &data.target,
+                    &hit,
+                    data.duration_ms,
+                    data.human,
+                    data.spread,
+                )?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::LongPress(data) => {
                 let hit = self.require(&data.target, id)?;
-                self.click(id, &data.target, &hit, data.duration_ms, data.human, data.spread)?;
+                self.click(
+                    id,
+                    &data.target,
+                    &hit,
+                    data.duration_ms,
+                    data.human,
+                    data.spread,
+                )?;
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::Swipe(data) => {
@@ -517,7 +611,11 @@ impl<'a> Interpreter<'a> {
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::Log(data) => {
-                self.reporter.log(&data.level, "script_log", json!({ "stepId": id, "msg": data.msg }));
+                self.reporter.log(
+                    &data.level,
+                    "script_log",
+                    json!({ "stepId": id, "msg": data.msg }),
+                );
                 Ok(Outcome::Follow(handle::NEXT))
             }
             NodeKind::Snapshot(data) => {
@@ -546,13 +644,20 @@ impl<'a> Interpreter<'a> {
             }
             NodeKind::If(data) => {
                 let value = self.eval(&data.when, id)?;
-                Ok(Outcome::Follow(if value { handle::TRUE } else { handle::FALSE }))
+                Ok(Outcome::Follow(if value {
+                    handle::TRUE
+                } else {
+                    handle::FALSE
+                }))
             }
             NodeKind::Switch(data) => {
                 self.invalidate();
                 for case in &data.cases {
                     if self.find(case, id, false, false)?.is_some() {
-                        return Ok(Outcome::FollowOwned(format!("{}{case}", handle::CASE_PREFIX)));
+                        return Ok(Outcome::FollowOwned(format!(
+                            "{}{case}",
+                            handle::CASE_PREFIX
+                        )));
                     }
                 }
                 Ok(Outcome::Follow(handle::DEFAULT))
@@ -577,14 +682,31 @@ impl<'a> Interpreter<'a> {
     /// hand would: a landing point scattered around the anchor, a curved mouse trip
     /// from where the pointer is, a hesitation, and a jittered press (see `human`).
     /// `dx`/`dy` in the log report where it landed.
-    fn click(&mut self, id: &str, name: &str, hit: &Hit, duration_ms: u32, human: bool, spread: f64) -> RunResultOf<()> {
+    fn click(
+        &mut self,
+        id: &str,
+        name: &str,
+        hit: &Hit,
+        duration_ms: u32,
+        human: bool,
+        spread: f64,
+    ) -> RunResultOf<()> {
         let mut human_fields = serde_json::Map::new();
         let point = if human {
             let (point, plan) = {
                 let mut rng = rand::rng();
                 let point = human::human_point(&hit.rect, hit.point, spread, &mut rng);
                 let from = self.driver.pointer_position()?;
-                (point, human::plan_click(from, point, hit.rect.w.min(hit.rect.h), duration_ms, &mut rng))
+                (
+                    point,
+                    human::plan_click(
+                        from,
+                        point,
+                        hit.rect.w.min(hit.rect.h),
+                        duration_ms,
+                        &mut rng,
+                    ),
+                )
             };
             self.play(&plan)?;
             human_fields.insert("travelMs".into(), json!(round1(plan.travel_ms)));
@@ -616,7 +738,8 @@ impl<'a> Interpreter<'a> {
             object.extend(human_fields);
         }
         self.reporter.log("info", "tap", fields);
-        self.reporter.node(id, NodeState::Running, Some(hit.score), Some(point), None);
+        self.reporter
+            .node(id, NodeState::Running, Some(hit.score), Some(point), None);
         self.record_action(id, Some(name))
     }
 
@@ -634,17 +757,32 @@ impl<'a> Interpreter<'a> {
             None => {
                 let vector = data.vector.unwrap_or([0.0, -0.3]);
                 let bounds = self.driver.bounds()?;
-                (start.point.0 + vector[0] * bounds.w, start.point.1 + vector[1] * bounds.h)
+                (
+                    start.point.0 + vector[0] * bounds.w,
+                    start.point.1 + vector[1] * bounds.h,
+                )
             }
         };
-        self.driver.swipe(start.point.0, start.point.1, end_point.0, end_point.1, data.duration_ms)?;
+        self.driver.swipe(
+            start.point.0,
+            start.point.1,
+            end_point.0,
+            end_point.1,
+            data.duration_ms,
+        )?;
         self.record_action(id, Some(&data.from))
     }
 
     /// A drag as a hand draws it: start and end scattered inside their boxes (or the
     /// vector's end point jittered), approached with a curved mouse trip, stroked
     /// along an arc with a bell-shaped speed over a jittered duration.
-    fn swipe_human(&mut self, id: &str, data: &SwipeData, start_hit: &Hit, end_hit: Option<&Hit>) -> RunResultOf<()> {
+    fn swipe_human(
+        &mut self,
+        id: &str,
+        data: &SwipeData,
+        start_hit: &Hit,
+        end_hit: Option<&Hit>,
+    ) -> RunResultOf<()> {
         let surface = self.driver.bounds()?;
         let (start, end, plan) = {
             let mut rng = rand::rng();
@@ -653,7 +791,10 @@ impl<'a> Interpreter<'a> {
                 Some(hit) => human::human_point(&hit.rect, hit.point, data.spread, &mut rng),
                 None => {
                     let vector = data.vector.unwrap_or([0.0, -0.3]);
-                    let nominal = (start.0 + vector[0] * surface.w, start.1 + vector[1] * surface.h);
+                    let nominal = (
+                        start.0 + vector[0] * surface.w,
+                        start.1 + vector[1] * surface.h,
+                    );
                     let jittered = human::jitter_drag_end(start, nominal, data.spread, &mut rng);
                     // A drag that runs off the captured surface would press into whatever is outside it.
                     (
@@ -663,7 +804,14 @@ impl<'a> Interpreter<'a> {
                 }
             };
             let from = self.driver.pointer_position()?;
-            let plan = human::plan_drag(from, start, start_hit.rect.w.min(start_hit.rect.h), end, data.duration_ms, &mut rng);
+            let plan = human::plan_drag(
+                from,
+                start,
+                start_hit.rect.w.min(start_hit.rect.h),
+                end,
+                data.duration_ms,
+                &mut rng,
+            );
             (start, end, plan)
         };
         self.play(&plan)?;
@@ -713,9 +861,19 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn wait_for(&mut self, id: &str, names: &[String], timeout_ms: u64, interval_ms: u64) -> RunResultOf<()> {
+    fn wait_for(
+        &mut self,
+        id: &str,
+        names: &[String],
+        timeout_ms: u64,
+        interval_ms: u64,
+    ) -> RunResultOf<()> {
         if names.is_empty() {
-            return Err(RunError::at(Reason::BadStep, "waitFor needs at least one target", id));
+            return Err(RunError::at(
+                Reason::BadStep,
+                "waitFor needs at least one target",
+                id,
+            ));
         }
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let interval = interval_ms.max(50) as f64;
@@ -728,13 +886,23 @@ impl<'a> Interpreter<'a> {
                 }
             }
             if Instant::now() >= deadline {
-                return Err(RunError::at(Reason::Timeout, format!("none of {names:?} appeared"), id));
+                return Err(RunError::at(
+                    Reason::Timeout,
+                    format!("none of {names:?} appeared"),
+                    id,
+                ));
             }
             self.sleep(interval)?;
         }
     }
 
-    fn wait_gone(&mut self, id: &str, name: &str, timeout_ms: u64, interval_ms: u64) -> RunResultOf<()> {
+    fn wait_gone(
+        &mut self,
+        id: &str,
+        name: &str,
+        timeout_ms: u64,
+        interval_ms: u64,
+    ) -> RunResultOf<()> {
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let interval = interval_ms.max(50) as f64;
         loop {
@@ -744,7 +912,11 @@ impl<'a> Interpreter<'a> {
                 return Ok(());
             }
             if Instant::now() >= deadline {
-                return Err(RunError::at(Reason::Timeout, format!("target \"{name}\" never disappeared"), id));
+                return Err(RunError::at(
+                    Reason::Timeout,
+                    format!("target \"{name}\" never disappeared"),
+                    id,
+                ));
             }
             self.sleep(interval)?;
         }
@@ -797,12 +969,22 @@ impl<'a> Interpreter<'a> {
                 LoopMode::Forever => true,
                 LoopMode::While => match &data.when {
                     Some(condition) => self.eval(condition, &node.id)?,
-                    None => return Err(RunError::at(Reason::BadStep, "a while loop needs a condition", &node.id)),
+                    None => {
+                        return Err(RunError::at(
+                            Reason::BadStep,
+                            "a while loop needs a condition",
+                            &node.id,
+                        ))
+                    }
                 },
             };
             if !proceed || iterations >= cap {
                 if proceed && data.mode != LoopMode::Count {
-                    self.reporter.log("warn", "loop_cap", json!({ "nodeId": node.id, "iterations": iterations }));
+                    self.reporter.log(
+                        "warn",
+                        "loop_cap",
+                        json!({ "nodeId": node.id, "iterations": iterations }),
+                    );
                 }
                 return Ok(None);
             }
@@ -813,7 +995,13 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn run_retry(&mut self, flow: &'a Flow, node: &'a Node, times: u32, backoff_ms: u64) -> RunResultOf<Outcome> {
+    fn run_retry(
+        &mut self,
+        flow: &'a Flow,
+        node: &'a Node,
+        times: u32,
+        backoff_ms: u64,
+    ) -> RunResultOf<Outcome> {
         let body = flow.next(&node.id, handle::BODY);
         let times = times.max(1);
         let mut last: Option<RunError> = None;
@@ -844,7 +1032,11 @@ impl<'a> Interpreter<'a> {
         if flow.next(&node.id, handle::FAILED).is_some() {
             return Ok(Outcome::Follow(handle::FAILED));
         }
-        Err(RunError::at(last.reason, format!("retry exhausted: {}", last.message), &node.id))
+        Err(RunError::at(
+            last.reason,
+            format!("retry exhausted: {}", last.message),
+            &node.id,
+        ))
     }
 
     // ------------------------------------------------------------ conditions
@@ -896,8 +1088,14 @@ fn routed_handle(kind: &NodeKind, reason: Reason) -> Option<&'static str> {
         return None;
     }
     match kind {
-        NodeKind::Tap(_) | NodeKind::LongPress(_) | NodeKind::Swipe(_) if reason == Reason::NotFound => Some(handle::FAIL),
-        NodeKind::WaitFor(_) | NodeKind::WaitGone(_) | NodeKind::WaitStable(_) if reason == Reason::Timeout => {
+        NodeKind::Tap(_) | NodeKind::LongPress(_) | NodeKind::Swipe(_)
+            if reason == Reason::NotFound =>
+        {
+            Some(handle::FAIL)
+        }
+        NodeKind::WaitFor(_) | NodeKind::WaitGone(_) | NodeKind::WaitStable(_)
+            if reason == Reason::Timeout =>
+        {
             Some(handle::TIMEOUT)
         }
         _ => None,
@@ -935,7 +1133,11 @@ pub fn compare(actual: Option<&VarValue>, op: CompareOp, expected: &VarValue) ->
                 (Some(a), b) => match (a, b) {
                     (VarValue::Str(x), VarValue::Str(y)) => x == y,
                     _ => match (as_number(a), as_number(b)) {
-                        (Some(x), Some(y)) if !matches!((a, b), (VarValue::Str(_), _) | (_, VarValue::Str(_))) => x == y,
+                        (Some(x), Some(y))
+                            if !matches!((a, b), (VarValue::Str(_), _) | (_, VarValue::Str(_))) =>
+                        {
+                            x == y
+                        }
                         _ => as_text(a) == as_text(b),
                     },
                 },
@@ -947,7 +1149,9 @@ pub fn compare(actual: Option<&VarValue>, op: CompareOp, expected: &VarValue) ->
             }
         }
         CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
-            let (Some(a), Some(b)) = (actual.and_then(as_number), as_number(expected)) else { return false };
+            let (Some(a), Some(b)) = (actual.and_then(as_number), as_number(expected)) else {
+                return false;
+            };
             match op {
                 CompareOp::Lt => a < b,
                 CompareOp::Le => a <= b,
@@ -985,9 +1189,17 @@ mod compare_tests {
         assert!(compare(Some(&s("12")), CompareOp::Ge, &n(12.0)));
         assert!(!compare(None, CompareOp::Eq, &n(1.0)));
         assert!(compare(None, CompareOp::Ne, &n(1.0)) == !compare(None, CompareOp::Eq, &n(1.0)));
-        assert!(compare(Some(&s("hello world")), CompareOp::Contains, &s("lo wo")));
+        assert!(compare(
+            Some(&s("hello world")),
+            CompareOp::Contains,
+            &s("lo wo")
+        ));
         assert!(compare(Some(&s("abc123")), CompareOp::Match, &s(r"\d+$")));
         assert!(!compare(Some(&s("abc")), CompareOp::Lt, &n(1.0)));
-        assert!(compare(Some(&VarValue::Bool(true)), CompareOp::Eq, &VarValue::Bool(true)));
+        assert!(compare(
+            Some(&VarValue::Bool(true)),
+            CompareOp::Eq,
+            &VarValue::Bool(true)
+        ));
     }
 }

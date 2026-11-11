@@ -109,6 +109,14 @@ export interface NotifyConfig {
   keyword: string;
 }
 
+/** A newer release found by the in-app updater. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  /** Release notes of the new version, when the release carries any. */
+  notes: string | null;
+}
+
 export interface Backend {
   /** `true` when talking to the real Rust core, `false` for the in-browser stand-in. */
   readonly native: boolean;
@@ -154,4 +162,9 @@ export interface Backend {
   probe(ir: IrDoc, surface: Surface): Promise<ProbeRow[]>;
   listRuns(): Promise<RunSummary[]>;
   getRun(id: string): Promise<RunDetail>;
+
+  /** Ask the release feed for a newer version; null when this one is the latest. Rejects when the feed cannot be reached. */
+  checkUpdate(): Promise<UpdateInfo | null>;
+  /** Download and install the version `checkUpdate` found, then restart the app. */
+  installUpdate(): Promise<void>;
 }

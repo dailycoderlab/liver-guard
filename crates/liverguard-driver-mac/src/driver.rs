@@ -2,11 +2,11 @@
 
 use std::time::Instant;
 
-use opencv::core::{Mat, MatTraitManual, Scalar, CV_8UC4};
-use opencv::imgproc;
 use liverguard_engine::{Driver, DriverError, DriverResult, PointerAction};
 use liverguard_ir::{Bounds, Rect};
 use liverguard_vision::Frame;
+use opencv::core::{Mat, MatTraitManual, Scalar, CV_8UC4};
+use opencv::imgproc;
 
 use crate::capture::{CaptureError, Capturer, RawImage, Target};
 use crate::window::{self, WindowInfo};
@@ -39,7 +39,11 @@ pub struct MacDriver {
 
 impl MacDriver {
     pub fn new(selector: SurfaceSelector) -> Self {
-        Self { selector, capturer: Capturer::new(), activate_window: true }
+        Self {
+            selector,
+            capturer: Capturer::new(),
+            activate_window: true,
+        }
     }
 
     pub fn full_screen() -> Self {
@@ -53,9 +57,11 @@ impl MacDriver {
 
     pub fn surface(&self) -> DriverResult<Surface> {
         match &self.selector {
-            SurfaceSelector::FullScreen => {
-                Ok(Surface { rect: window::main_display_bounds(), label: "display".into(), window: None })
-            }
+            SurfaceSelector::FullScreen => Ok(Surface {
+                rect: window::main_display_bounds(),
+                label: "display".into(),
+                window: None,
+            }),
             SurfaceSelector::Window { number, query } => {
                 let mut found = number.and_then(window::window_by_number);
                 if found.is_none() {
@@ -63,8 +69,14 @@ impl MacDriver {
                 }
                 // Never turn a missing selected window into a whole-screen target:
                 // that could inject input into an unrelated application.
-                let found = found.ok_or_else(|| DriverError::failed("Selected window is unavailable; select the target again"))?;
-                Ok(Surface { rect: found.bounds, label: found.to_string(), window: Some(found) })
+                let found = found.ok_or_else(|| {
+                    DriverError::failed("Selected window is unavailable; select the target again")
+                })?;
+                Ok(Surface {
+                    rect: found.bounds,
+                    label: found.to_string(),
+                    window: Some(found),
+                })
             }
         }
     }
@@ -75,7 +87,9 @@ impl MacDriver {
             None => Target::MainDisplay,
         };
         self.capturer.grab(target).map_err(|error| match error {
-            CaptureError::Missing => DriverError::failed("Selected window is unavailable; select the target again"),
+            CaptureError::Missing => {
+                DriverError::failed("Selected window is unavailable; select the target again")
+            }
             other => DriverError::failed(other.to_string()),
         })
     }
@@ -87,16 +101,22 @@ impl MacDriver {
             return Ok(());
         }
         let surface = self.surface()?;
-        let target = surface.window.ok_or_else(|| DriverError::failed("Selected window is unavailable"))?;
+        let target = surface
+            .window
+            .ok_or_else(|| DriverError::failed("Selected window is unavailable"))?;
         if self.activate_window && !window::activate(&target) {
             return Err(DriverError::failed("Selected window cannot be activated"));
         }
         if points.iter().any(|&(x, y)| !target.bounds.contains(x, y)) {
-            return Err(DriverError::failed("Input point is outside the selected window"));
+            return Err(DriverError::failed(
+                "Input point is outside the selected window",
+            ));
         }
         for other in window::occluding_windows(&target, 0.000001) {
             if points.iter().any(|&(x, y)| other.bounds.contains(x, y)) {
-                return Err(DriverError::failed("Selected window is covered at the input point"));
+                return Err(DriverError::failed(
+                    "Selected window is covered at the input point",
+                ));
             }
         }
         Ok(())
@@ -109,7 +129,13 @@ fn input_error(error: input::InputError) -> DriverError {
 
 fn bgra_to_bgr(raw: &RawImage) -> DriverResult<Mat> {
     let to_error = |e: opencv::Error| DriverError::failed(format!("image conversion failed: {e}"));
-    let mut bgra = Mat::new_rows_cols_with_default(raw.height as i32, raw.width as i32, CV_8UC4, Scalar::all(0.0)).map_err(to_error)?;
+    let mut bgra = Mat::new_rows_cols_with_default(
+        raw.height as i32,
+        raw.width as i32,
+        CV_8UC4,
+        Scalar::all(0.0),
+    )
+    .map_err(to_error)?;
     let dst = bgra.data_bytes_mut().map_err(to_error)?;
     let len = raw.bgra.len().min(dst.len());
     dst[..len].copy_from_slice(&raw.bgra[..len]);
@@ -122,7 +148,13 @@ impl Driver for MacDriver {
     fn bounds(&mut self) -> DriverResult<Bounds> {
         let surface = self.surface()?;
         let raw = self.grab(&surface)?;
-        Ok(Bounds::new(surface.rect.x, surface.rect.y, surface.rect.w, surface.rect.h, raw.width as f64 / surface.rect.w))
+        Ok(Bounds::new(
+            surface.rect.x,
+            surface.rect.y,
+            surface.rect.w,
+            surface.rect.h,
+            raw.width as f64 / surface.rect.w,
+        ))
     }
 
     fn capture(&mut self) -> DriverResult<Frame> {
@@ -133,7 +165,8 @@ impl Driver for MacDriver {
 
         if surface.window.is_some() {
             let current = self.surface()?;
-            let same = current.window.as_ref().map(|w| (w.number, w.pid)) == surface.window.as_ref().map(|w| (w.number, w.pid))
+            let same = current.window.as_ref().map(|w| (w.number, w.pid))
+                == surface.window.as_ref().map(|w| (w.number, w.pid))
                 && current.rect == surface.rect;
             if !same {
                 return Err(DriverError::SurfaceChanged);
@@ -144,7 +177,16 @@ impl Driver for MacDriver {
         // displays break the "2x means 2x" rule and every conversion depends on it.
         let scale = raw.width as f64 / surface.rect.w;
         let image = bgra_to_bgr(&raw)?;
-        let mut frame = Frame::new(image, Bounds::new(surface.rect.x, surface.rect.y, surface.rect.w, surface.rect.h, scale));
+        let mut frame = Frame::new(
+            image,
+            Bounds::new(
+                surface.rect.x,
+                surface.rect.y,
+                surface.rect.w,
+                surface.rect.h,
+                scale,
+            ),
+        );
         frame.capture_ms = elapsed_ms;
         Ok(frame)
     }

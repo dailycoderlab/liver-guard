@@ -8,19 +8,23 @@
 use std::time::{Duration, Instant};
 
 use windows::core::{Interface, Result as WinResult};
-use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession};
+use windows::Graphics::Capture::{
+    Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
+};
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION,
     D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
 };
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::Graphics::Gdi::HMONITOR;
-use windows::Win32::System::WinRT::Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess};
+use windows::Win32::System::WinRT::Direct3D11::{
+    CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
+};
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 
 use crate::window::hwnd;
@@ -91,12 +95,17 @@ fn create_gpu() -> WinResult<Gpu> {
         let context = context.ok_or_else(windows::core::Error::empty)?;
         let dxgi: IDXGIDevice = device.cast()?;
         let winrt: IDirect3DDevice = CreateDirect3D11DeviceFromDXGIDevice(&dxgi)?.cast()?;
-        Ok(Gpu { device, context, winrt })
+        Ok(Gpu {
+            device,
+            context,
+            winrt,
+        })
     }
 }
 
 fn item_for(target: Target) -> Result<GraphicsCaptureItem> {
-    let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(failed)?;
+    let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
+        .map_err(failed)?;
     unsafe {
         match target {
             Target::Window(number) => interop.CreateForWindow(hwnd(number)),
@@ -141,8 +150,13 @@ impl Capturer {
             return Err(CaptureError::Missing);
         }
 
-        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&gpu.winrt, DirectXPixelFormat::B8G8R8A8UIntNormalized, 1, size)
-            .map_err(failed)?;
+        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &gpu.winrt,
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            1,
+            size,
+        )
+        .map_err(failed)?;
         let session = pool.CreateCaptureSession(&item).map_err(failed)?;
         // Both are newer-OS niceties (no cursor, no yellow border); older systems simply ignore them.
         let _ = session.SetIsCursorCaptureEnabled(false);
@@ -164,7 +178,12 @@ impl Capturer {
             let surface = frame.Surface().map_err(failed)?;
             let access: IDirect3DDxgiInterfaceAccess = surface.cast().map_err(failed)?;
             let texture: ID3D11Texture2D = unsafe { access.GetInterface() }.map_err(failed)?;
-            read_back(gpu, &texture, content.Width.max(1) as u32, content.Height.max(1) as u32)
+            read_back(
+                gpu,
+                &texture,
+                content.Width.max(1) as u32,
+                content.Height.max(1) as u32,
+            )
         })();
 
         let _ = session.Close();
@@ -184,12 +203,16 @@ fn read_back(gpu: &Gpu, texture: &ID3D11Texture2D, width: u32, height: u32) -> R
         desc.MiscFlags = 0;
 
         let mut staging = None;
-        gpu.device.CreateTexture2D(&desc, None, Some(&mut staging)).map_err(failed)?;
+        gpu.device
+            .CreateTexture2D(&desc, None, Some(&mut staging))
+            .map_err(failed)?;
         let staging = staging.ok_or_else(|| CaptureError::Failed("无法创建暂存纹理".into()))?;
         gpu.context.CopyResource(&staging, texture);
 
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        gpu.context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)).map_err(failed)?;
+        gpu.context
+            .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+            .map_err(failed)?;
 
         let width = width.min(desc.Width);
         let height = height.min(desc.Height);
@@ -197,10 +220,15 @@ fn read_back(gpu: &Gpu, texture: &ID3D11Texture2D, width: u32, height: u32) -> R
         let mut bgra = vec![0u8; row_bytes * height as usize];
         let source = mapped.pData as *const u8;
         for row in 0..height as usize {
-            let from = std::slice::from_raw_parts(source.add(row * mapped.RowPitch as usize), row_bytes);
+            let from =
+                std::slice::from_raw_parts(source.add(row * mapped.RowPitch as usize), row_bytes);
             bgra[row * row_bytes..(row + 1) * row_bytes].copy_from_slice(from);
         }
         gpu.context.Unmap(&staging, 0);
-        Ok(RawImage { width, height, bgra })
+        Ok(RawImage {
+            width,
+            height,
+            bgra,
+        })
     }
 }

@@ -1,8 +1,8 @@
 //! Shared error type and small `Mat` helpers.
 
+use liverguard_ir::geometry::py_round;
 use opencv::core::{Mat, MatTraitConst, MatTraitConstManual, Size, CV_8UC1, CV_8UC3};
 use opencv::imgproc;
-use liverguard_ir::geometry::py_round;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VisionError {
@@ -37,7 +37,14 @@ pub fn resize_by(image: &Mat, factor: f64) -> Result<Mat> {
         return Ok(image.try_clone()?);
     }
     let mut out = Mat::default();
-    imgproc::resize(image, &mut out, Size::new(new_w, new_h), 0.0, 0.0, interpolation_for(factor))?;
+    imgproc::resize(
+        image,
+        &mut out,
+        Size::new(new_w, new_h),
+        0.0,
+        0.0,
+        interpolation_for(factor),
+    )?;
     Ok(out)
 }
 
@@ -68,7 +75,11 @@ pub fn std_dev(mat: &Mat) -> Result<f64> {
     }
     let n = bytes.len() as f64;
     let mean = bytes.iter().map(|&v| v as f64).sum::<f64>() / n;
-    let var = bytes.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / n;
+    let var = bytes
+        .iter()
+        .map(|&v| (v as f64 - mean).powi(2))
+        .sum::<f64>()
+        / n;
     Ok(var.sqrt())
 }
 

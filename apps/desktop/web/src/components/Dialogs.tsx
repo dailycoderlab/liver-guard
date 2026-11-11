@@ -52,7 +52,7 @@ export function DialogHost() {
           className="fixed top-1/3 left-1/2 z-50 w-[380px] -translate-x-1/2 rounded-xl border border-line bg-panel p-4 shadow-2xl outline-none"
         >
           <Dialog.Title className="text-sm font-semibold">{request?.title}</Dialog.Title>
-          {request?.message && <p className="mt-2 text-mute">{request.message}</p>}
+          {request?.message && <p className="mt-2 whitespace-pre-line text-mute">{request.message}</p>}
           {request?.kind === 'prompt' && (
             <div className="mt-3">
               {request.label && <div className="mb-1 text-xs text-mute">{request.label}</div>}

@@ -6,9 +6,9 @@
 //! problem, leaving only genuine layout scale differences for the multi-scale
 //! search to absorb.
 
+use liverguard_ir::geometry::{py_round, Bounds, Rect};
 use opencv::core::{Mat, MatTraitConst, Size};
 use opencv::imgproc;
-use liverguard_ir::geometry::{py_round, Bounds, Rect};
 
 use crate::util::{interpolation_for, Result, VisionError};
 
@@ -48,8 +48,21 @@ pub fn normalize_frame(image: &Mat, bounds: Bounds, canonical_width: f64) -> Res
     let new_w = py_round(width as f64 * factor) as i32;
     let new_h = (py_round(height as f64 * factor) as i32).max(1);
     let mut resized = Mat::default();
-    imgproc::resize(image, &mut resized, Size::new(new_w, new_h), 0.0, 0.0, interpolation_for(factor))?;
-    Ok(Normalized { image: resized, width: new_w, height: new_h, factor, bounds })
+    imgproc::resize(
+        image,
+        &mut resized,
+        Size::new(new_w, new_h),
+        0.0,
+        0.0,
+        interpolation_for(factor),
+    )?;
+    Ok(Normalized {
+        image: resized,
+        width: new_w,
+        height: new_h,
+        factor,
+        bounds,
+    })
 }
 
 /// Pixels per normalized pixel for a template.
@@ -58,8 +71,17 @@ pub fn normalize_frame(image: &Mat, bounds: Bounds, canonical_width: f64) -> Res
 /// Both the template and the live frame end up normalized by their own surface
 /// width, so a control that kept its relative size lands at scale 1.0 no matter
 /// how big either screen was.
-pub fn template_factor(record_width: f64, record_scale: f64, fallback_width: f64, canonical_width: f64) -> f64 {
-    let width = if record_width > 0.0 { record_width } else { fallback_width };
+pub fn template_factor(
+    record_width: f64,
+    record_scale: f64,
+    fallback_width: f64,
+    canonical_width: f64,
+) -> f64 {
+    let width = if record_width > 0.0 {
+        record_width
+    } else {
+        fallback_width
+    };
     let pixel_width = width * record_scale.max(0.01);
     if pixel_width <= 0.0 {
         return 1.0;

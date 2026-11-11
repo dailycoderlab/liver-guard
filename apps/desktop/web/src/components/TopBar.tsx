@@ -7,6 +7,7 @@ import { useUi } from '@/store/ui';
 import { isNotifyOn, NotifyDialog } from './NotifyDialog';
 import { RunControls } from './RunControls';
 import { SurfacePicker } from './SurfacePicker';
+import { UpdateButton } from './UpdateButton';
 import { Button } from './ui';
 
 export function TopBar() {
@@ -62,6 +63,7 @@ export function TopBar() {
       </Button>
 
       <div className="ml-auto flex items-center gap-1.5">
+        <UpdateButton />
         <Button disabled={!open || !dirty} onClick={save} title="保存 (⌘S)">
           <Save size={14} /> 保存
         </Button>

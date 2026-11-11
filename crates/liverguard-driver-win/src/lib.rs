@@ -35,7 +35,9 @@ pub use window::WindowInfo;
 /// Opt this process into Per-Monitor-V2 DPI awareness. Idempotent; failures
 /// (already set by the manifest) are fine.
 pub fn init_dpi_awareness() {
-    use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+    use windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }

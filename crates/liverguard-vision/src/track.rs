@@ -25,10 +25,22 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    pub fn remember(&mut self, target_id: &str, frame_hash: &str, rect: Rect, score: f64, point: (f64, f64)) {
+    pub fn remember(
+        &mut self,
+        target_id: &str,
+        frame_hash: &str,
+        rect: Rect,
+        score: f64,
+        point: (f64, f64),
+    ) {
         self.entries.insert(
             target_id.to_string(),
-            TrackEntry { frame_hash: frame_hash.to_string(), rect, score, point },
+            TrackEntry {
+                frame_hash: frame_hash.to_string(),
+                rect,
+                score,
+                point,
+            },
         );
         self.hits += 1;
     }

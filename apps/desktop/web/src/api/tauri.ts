@@ -1,4 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import type { IrDoc, Problem, Target } from '@/ir/model';
 import type {
   Backend,
@@ -45,6 +47,9 @@ function toBytes(value: unknown): ArrayBuffer {
 }
 
 type LiveMessage = { kind: 'error'; message: string };
+
+/** The update `checkUpdate` found last; `installUpdate` installs exactly that one. */
+let pendingUpdate: Update | null = null;
 
 export const tauriBackend: Backend = {
   native: true,
@@ -108,4 +113,18 @@ export const tauriBackend: Backend = {
   probe: (ir, surface) => invoke<ProbeRow[]>('probe', { ir, surface }),
   listRuns: () => invoke<RunSummary[]>('list_runs'),
   getRun: (id) => invoke<RunDetail>('get_run', { id }),
+
+  async checkUpdate() {
+    const previous = pendingUpdate;
+    pendingUpdate = await check();
+    if (previous) await previous.close().catch(() => undefined);
+    if (!pendingUpdate) return null;
+    const { version, currentVersion, body } = pendingUpdate;
+    return { version, currentVersion, notes: body?.trim() || null };
+  },
+  async installUpdate() {
+    if (!pendingUpdate) throw new Error('没有可安装的更新，请先检查更新');
+    await pendingUpdate.downloadAndInstall();
+    await relaunch();
+  },
 };

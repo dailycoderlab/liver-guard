@@ -11,7 +11,9 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
-    let Ok(output) = Command::new("xcrun").args(["--find", "swift"]).output() else { return };
+    let Ok(output) = Command::new("xcrun").args(["--find", "swift"]).output() else {
+        return;
+    };
     let swift = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     // <toolchain>/usr/bin/swift -> <toolchain>/usr/lib/swift/macosx
     if let Some(usr) = swift.parent().and_then(|bin| bin.parent()) {

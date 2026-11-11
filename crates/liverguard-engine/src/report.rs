@@ -24,7 +24,11 @@ pub enum NodeState {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RunEvent {
     #[serde(rename_all = "camelCase")]
-    Log { level: String, event: String, payload: Value },
+    Log {
+        level: String,
+        event: String,
+        payload: Value,
+    },
     #[serde(rename_all = "camelCase")]
     Node {
         node_id: String,
@@ -64,7 +68,11 @@ struct Aggregate {
 
 impl Aggregate {
     fn row(&self) -> Value {
-        let avg = if self.n > 0 { self.total / self.n as f64 } else { 0.0 };
+        let avg = if self.n > 0 {
+            self.total / self.n as f64
+        } else {
+            0.0
+        };
         json!({
             "stepId": self.step_id,
             "targetId": self.target_id,
@@ -82,7 +90,10 @@ fn round4(v: f64) -> f64 {
 }
 
 pub fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub struct Reporter {
@@ -94,7 +105,12 @@ pub struct Reporter {
 
 impl Reporter {
     pub fn new(run_id: impl Into<String>) -> Self {
-        Self { run_id: run_id.into(), aggregates: BTreeMap::new(), lines: Vec::new(), sink: None }
+        Self {
+            run_id: run_id.into(),
+            aggregates: BTreeMap::new(),
+            lines: Vec::new(),
+            sink: None,
+        }
     }
 
     /// Receive every log line and node transition as it happens.
@@ -106,7 +122,9 @@ impl Reporter {
     pub fn emit(&self, event: RunEvent) -> bool {
         match &self.sink {
             // A broken subscriber (the UI) must never abort the script run.
-            Some(sink) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink(&event))).is_ok(),
+            Some(sink) => {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink(&event))).is_ok()
+            }
             None => true,
         }
     }
@@ -120,7 +138,11 @@ impl Reporter {
             event: event.to_string(),
             payload: has_payload.then(|| payload.clone()),
         });
-        let delivered = self.emit(RunEvent::Log { level: level.to_string(), event: event.to_string(), payload });
+        let delivered = self.emit(RunEvent::Log {
+            level: level.to_string(),
+            event: event.to_string(),
+            payload,
+        });
         if !delivered {
             // The subscriber failed; keep a visible trace instead of swallowing it.
             self.lines.push(LogLine {
@@ -133,8 +155,21 @@ impl Reporter {
         }
     }
 
-    pub fn node(&self, node_id: &str, state: NodeState, score: Option<f64>, point: Option<(f64, f64)>, message: Option<String>) {
-        self.emit(RunEvent::Node { node_id: node_id.to_string(), state, score, point, message });
+    pub fn node(
+        &self,
+        node_id: &str,
+        state: NodeState,
+        score: Option<f64>,
+        point: Option<(f64, f64)>,
+        message: Option<String>,
+    ) {
+        self.emit(RunEvent::Node {
+            node_id: node_id.to_string(),
+            state,
+            score,
+            point,
+            message,
+        });
     }
 
     pub fn score(&mut self, step_id: &str, target_id: &str, score: f64, ms: f64) {
@@ -163,13 +198,21 @@ impl Reporter {
 
     pub fn summary_rows(&self) -> Vec<Value> {
         let mut rows: Vec<Value> = self.aggregates.values().map(Aggregate::row).collect();
-        rows.sort_by(|a, b| a["min"].as_f64().partial_cmp(&b["min"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
+        rows.sort_by(|a, b| {
+            a["min"]
+                .as_f64()
+                .partial_cmp(&b["min"].as_f64())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         rows
     }
 
     pub fn summary(&self) -> Value {
         let rows = self.summary_rows();
-        let low: Vec<&Value> = rows.iter().filter(|r| r["min"].as_f64().unwrap_or(1.0) < 0.82).collect();
+        let low: Vec<&Value> = rows
+            .iter()
+            .filter(|r| r["min"].as_f64().unwrap_or(1.0) < 0.82)
+            .collect();
         json!({ "steps": rows, "worst": rows.first(), "low": low })
     }
 

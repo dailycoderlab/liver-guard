@@ -110,11 +110,19 @@ pub fn validate(config: &NotifyConfig) -> Result<(), NotifyError> {
     if url.is_empty() {
         return Err(NotifyError::Invalid("请填写 Webhook 地址".into()));
     }
-    if !(url.starts_with("https://") || url.starts_with("http://")) || url.contains(char::is_whitespace) {
-        return Err(NotifyError::Invalid("Webhook 地址必须是 http:// 或 https:// 开头的链接".into()));
+    if !(url.starts_with("https://") || url.starts_with("http://"))
+        || url.contains(char::is_whitespace)
+    {
+        return Err(NotifyError::Invalid(
+            "Webhook 地址必须是 http:// 或 https:// 开头的链接".into(),
+        ));
     }
-    if !config.secret.trim().is_empty() && matches!(config.channel, Channel::Wecom | Channel::Generic) {
-        return Err(NotifyError::Invalid("这种接收方不支持签名密钥，请留空".into()));
+    if !config.secret.trim().is_empty()
+        && matches!(config.channel, Channel::Wecom | Channel::Generic)
+    {
+        return Err(NotifyError::Invalid(
+            "这种接收方不支持签名密钥，请留空".into(),
+        ));
     }
     Ok(())
 }
@@ -139,7 +147,9 @@ fn percent_encode(text: &str) -> String {
     let mut out = String::new();
     for byte in text.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -149,7 +159,10 @@ fn percent_encode(text: &str) -> String {
 /// DingTalk 加签: `sign = urlencode(base64(HMAC-SHA256(key = secret, msg = "{ts}\n{secret}")))`,
 /// `ts` in milliseconds, both appended to the URL.
 fn dingtalk_signature(secret: &str, timestamp_ms: u64) -> String {
-    percent_encode(&hmac_base64(secret.as_bytes(), format!("{timestamp_ms}\n{secret}").as_bytes()))
+    percent_encode(&hmac_base64(
+        secret.as_bytes(),
+        format!("{timestamp_ms}\n{secret}").as_bytes(),
+    ))
 }
 
 /// Feishu 签名校验: `sign = base64(HMAC-SHA256(key = "{ts}\n{secret}", msg = ""))`, `ts` in
@@ -159,7 +172,11 @@ fn feishu_signature(secret: &str, timestamp_s: u64) -> String {
 }
 
 /// Build the POST for `message`. `now_ms` only matters when a secret signs the request.
-pub fn build_request(config: &NotifyConfig, message: &Message, now_ms: u64) -> Result<Request, NotifyError> {
+pub fn build_request(
+    config: &NotifyConfig,
+    message: &Message,
+    now_ms: u64,
+) -> Result<Request, NotifyError> {
     validate(config)?;
     let url = config.url.trim().to_string();
     let secret = config.secret.trim();
@@ -170,11 +187,20 @@ pub fn build_request(config: &NotifyConfig, message: &Message, now_ms: u64) -> R
                 url
             } else {
                 let joiner = if url.contains('?') { '&' } else { '?' };
-                format!("{url}{joiner}timestamp={now_ms}&sign={}", dingtalk_signature(secret, now_ms))
+                format!(
+                    "{url}{joiner}timestamp={now_ms}&sign={}",
+                    dingtalk_signature(secret, now_ms)
+                )
             };
-            Request { url, body: json!({ "msgtype": "text", "text": { "content": text } }) }
+            Request {
+                url,
+                body: json!({ "msgtype": "text", "text": { "content": text } }),
+            }
         }
-        Channel::Wecom => Request { url, body: json!({ "msgtype": "text", "text": { "content": text } }) },
+        Channel::Wecom => Request {
+            url,
+            body: json!({ "msgtype": "text", "text": { "content": text } }),
+        },
         Channel::Feishu => {
             let mut body = json!({ "msg_type": "text", "content": { "text": text } });
             if !secret.is_empty() {
@@ -203,11 +229,18 @@ fn snippet(body: &str) -> String {
 /// message (wrong keyword, bad signature, rate limit), so the body has to be read.
 pub fn check_response(channel: Channel, status: u16, body: &str) -> Result<(), NotifyError> {
     if !(200..300).contains(&status) {
-        return Err(NotifyError::Http { status, body: snippet(body) });
+        return Err(NotifyError::Http {
+            status,
+            body: snippet(body),
+        });
     }
     let parsed: Option<Value> = serde_json::from_str(body).ok();
     let rejected = |code: Option<i64>, message: Option<&str>| {
-        Err(NotifyError::Rejected(format!("错误码 {}：{}", code.unwrap_or(-1), message.filter(|m| !m.is_empty()).unwrap_or("无说明"))))
+        Err(NotifyError::Rejected(format!(
+            "错误码 {}：{}",
+            code.unwrap_or(-1),
+            message.filter(|m| !m.is_empty()).unwrap_or("无说明")
+        )))
     };
     match (channel, parsed) {
         (Channel::Dingtalk | Channel::Wecom, Some(v)) => match v["errcode"].as_i64() {
@@ -218,7 +251,10 @@ pub fn check_response(channel: Channel, status: u16, body: &str) -> Result<(), N
             // Newer bots answer `code`, older ones `StatusCode`.
             match v["code"].as_i64().or_else(|| v["StatusCode"].as_i64()) {
                 Some(0) | None => Ok(()),
-                code => rejected(code, v["msg"].as_str().or_else(|| v["StatusMessage"].as_str())),
+                code => rejected(
+                    code,
+                    v["msg"].as_str().or_else(|| v["StatusMessage"].as_str()),
+                ),
             }
         }
         _ => Ok(()),
@@ -255,7 +291,10 @@ fn network_hint(error: &ureq::Error) -> String {
 /// Send `message`, retrying transient failures (network errors, 5xx, 429) a couple of times.
 /// Blocks for at most a few tens of seconds; call it off the UI thread.
 pub fn send(config: &NotifyConfig, message: &Message) -> Result<(), NotifyError> {
-    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     let request = build_request(config, message, now_ms)?;
     let mut last = None;
     for attempt in 0..ATTEMPTS {
@@ -286,18 +325,30 @@ mod tests {
     use super::*;
 
     fn config(channel: Channel) -> NotifyConfig {
-        NotifyConfig { channel, url: "https://example.com/robot/send?access_token=T".into(), ..Default::default() }
+        NotifyConfig {
+            channel,
+            url: "https://example.com/robot/send?access_token=T".into(),
+            ..Default::default()
+        }
     }
 
     fn message() -> Message {
-        Message { event: "run_failed", title: "失败".into(), text: "脚本失败了".into(), details: json!({ "script": "契灵" }) }
+        Message {
+            event: "run_failed",
+            title: "失败".into(),
+            text: "脚本失败了".into(),
+            details: json!({ "script": "契灵" }),
+        }
     }
 
     #[test]
     fn dingtalk_posts_a_text_message() {
         let request = build_request(&config(Channel::Dingtalk), &message(), 1).unwrap();
         assert_eq!(request.url, "https://example.com/robot/send?access_token=T");
-        assert_eq!(request.body, json!({ "msgtype": "text", "text": { "content": "脚本失败了" } }));
+        assert_eq!(
+            request.body,
+            json!({ "msgtype": "text", "text": { "content": "脚本失败了" } })
+        );
     }
 
     #[test]
@@ -306,10 +357,20 @@ mod tests {
         let mut cfg = config(Channel::Dingtalk);
         cfg.secret = "SECabc".into();
         let request = build_request(&cfg, &message(), 1_700_000_000_000).unwrap();
-        assert!(request.url.starts_with("https://example.com/robot/send?access_token=T&timestamp=1700000000000&sign="));
-        assert_eq!(dingtalk_signature("SECabc", 1_700_000_000_000), "jcUpW0QmtKduN03n4JqQ0PBosVjqnM8gU7fIIvsDmCM%3D");
+        assert!(request.url.starts_with(
+            "https://example.com/robot/send?access_token=T&timestamp=1700000000000&sign="
+        ));
+        assert_eq!(
+            dingtalk_signature("SECabc", 1_700_000_000_000),
+            "jcUpW0QmtKduN03n4JqQ0PBosVjqnM8gU7fIIvsDmCM%3D"
+        );
         // `+`, `/` and `=` of base64 must be percent-encoded in the query.
-        assert!(!request.url.split("sign=").nth(1).unwrap().contains(['+', '/', '=']));
+        assert!(!request
+            .url
+            .split("sign=")
+            .nth(1)
+            .unwrap()
+            .contains(['+', '/', '=']));
     }
 
     #[test]
@@ -318,7 +379,10 @@ mod tests {
         cfg.secret = "SECabc".into();
         let request = build_request(&cfg, &message(), 1_700_000_123_456).unwrap();
         assert_eq!(request.body["timestamp"], "1700000123");
-        assert_eq!(request.body["sign"], "G2zGJLgIW63SzyMrHNVepLZux0morfQ6o+EMM0xSGLk=");
+        assert_eq!(
+            request.body["sign"],
+            "G2zGJLgIW63SzyMrHNVepLZux0morfQ6o+EMM0xSGLk="
+        );
         assert_eq!(request.body["msg_type"], "text");
         assert_eq!(request.body["content"]["text"], "脚本失败了");
         assert!(!request.url.contains("sign"));
@@ -328,10 +392,22 @@ mod tests {
     fn the_keyword_is_prepended_only_when_missing() {
         let mut cfg = config(Channel::Wecom);
         cfg.keyword = "护肝".into();
-        let plain = Message { text: "出错了".into(), ..message() };
-        assert_eq!(build_request(&cfg, &plain, 1).unwrap().body["text"]["content"], "护肝\n出错了");
-        let tagged = Message { text: "【护肝】出错了".into(), ..message() };
-        assert_eq!(build_request(&cfg, &tagged, 1).unwrap().body["text"]["content"], "【护肝】出错了");
+        let plain = Message {
+            text: "出错了".into(),
+            ..message()
+        };
+        assert_eq!(
+            build_request(&cfg, &plain, 1).unwrap().body["text"]["content"],
+            "护肝\n出错了"
+        );
+        let tagged = Message {
+            text: "【护肝】出错了".into(),
+            ..message()
+        };
+        assert_eq!(
+            build_request(&cfg, &tagged, 1).unwrap().body["text"]["content"],
+            "【护肝】出错了"
+        );
     }
 
     #[test]
@@ -339,8 +415,16 @@ mod tests {
         let request = build_request(&config(Channel::Generic), &message(), 1).unwrap();
         assert_eq!(request.body["event"], "run_failed");
 
-        let done = Message { event: "loop_done", ..message() };
-        assert_eq!(build_request(&config(Channel::Generic), &done, 1).unwrap().body["event"], "loop_done");
+        let done = Message {
+            event: "loop_done",
+            ..message()
+        };
+        assert_eq!(
+            build_request(&config(Channel::Generic), &done, 1)
+                .unwrap()
+                .body["event"],
+            "loop_done"
+        );
         assert_eq!(request.body["details"]["script"], "契灵");
     }
 
@@ -362,12 +446,27 @@ mod tests {
     #[test]
     fn robots_that_answer_200_with_an_error_code_count_as_rejected() {
         assert!(check_response(Channel::Dingtalk, 200, r#"{"errcode":0,"errmsg":"ok"}"#).is_ok());
-        let error = check_response(Channel::Dingtalk, 200, r#"{"errcode":310000,"errmsg":"keywords not in content"}"#).unwrap_err();
+        let error = check_response(
+            Channel::Dingtalk,
+            200,
+            r#"{"errcode":310000,"errmsg":"keywords not in content"}"#,
+        )
+        .unwrap_err();
         assert!(matches!(error, NotifyError::Rejected(_)));
         assert!(error.to_string().contains("keywords not in content"));
-        assert!(check_response(Channel::Wecom, 200, r#"{"errcode":93000,"errmsg":"invalid webhook url"}"#).is_err());
+        assert!(check_response(
+            Channel::Wecom,
+            200,
+            r#"{"errcode":93000,"errmsg":"invalid webhook url"}"#
+        )
+        .is_err());
         assert!(check_response(Channel::Feishu, 200, r#"{"code":0,"msg":"success"}"#).is_ok());
-        assert!(check_response(Channel::Feishu, 200, r#"{"code":19021,"msg":"sign match fail"}"#).is_err());
+        assert!(check_response(
+            Channel::Feishu,
+            200,
+            r#"{"code":19021,"msg":"sign match fail"}"#
+        )
+        .is_err());
         assert!(check_response(Channel::Feishu, 200, r#"{"StatusCode":0}"#).is_ok());
         // Generic only looks at the status, and an HTML body from a proxy is not an error by itself.
         assert!(check_response(Channel::Generic, 204, "").is_ok());
@@ -380,7 +479,9 @@ mod tests {
         let error = check_response(Channel::Generic, 502, &long).unwrap_err();
         assert!(error.is_transient());
         assert!(error.to_string().chars().count() < 300);
-        assert!(!check_response(Channel::Generic, 404, "no").unwrap_err().is_transient());
+        assert!(!check_response(Channel::Generic, 404, "no")
+            .unwrap_err()
+            .is_transient());
         assert!(!NotifyError::Rejected("x".into()).is_transient());
     }
 
@@ -394,15 +495,22 @@ mod tests {
 
     /// Serve `replies` to successive connections on a loopback port; returns the URL and the
     /// request bodies seen so far.
-    fn serve(replies: Vec<(u16, &'static str)>) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    fn serve(
+        replies: Vec<(u16, &'static str)>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/robot/send?access_token=SECRET", listener.local_addr().unwrap());
+        let url = format!(
+            "http://{}/robot/send?access_token=SECRET",
+            listener.local_addr().unwrap()
+        );
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let log = seen.clone();
         std::thread::spawn(move || {
             for (status, body) in replies {
-                let Ok((mut stream, _)) = listener.accept() else { return };
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
                 let mut buffer = vec![0u8; 8192];
                 let mut read = 0;
                 // Read until the headers and the whole JSON body have arrived.
@@ -410,8 +518,18 @@ mod tests {
                     let n = stream.read(&mut buffer[read..]).unwrap_or(0);
                     read += n;
                     let text = String::from_utf8_lossy(&buffer[..read]).to_string();
-                    if n == 0 || text.rsplit("\r\n\r\n").next().is_some_and(|b| b.ends_with('}')) {
-                        log.lock().unwrap().push(text.rsplit("\r\n\r\n").next().unwrap_or_default().to_string());
+                    if n == 0
+                        || text
+                            .rsplit("\r\n\r\n")
+                            .next()
+                            .is_some_and(|b| b.ends_with('}'))
+                    {
+                        log.lock().unwrap().push(
+                            text.rsplit("\r\n\r\n")
+                                .next()
+                                .unwrap_or_default()
+                                .to_string(),
+                        );
                         break;
                     }
                 }
@@ -425,7 +543,10 @@ mod tests {
     #[test]
     fn send_posts_json_and_accepts_an_ok_reply() {
         let (url, seen) = serve(vec![(200, r#"{"errcode":0,"errmsg":"ok"}"#)]);
-        let cfg = NotifyConfig { url, ..config(Channel::Dingtalk) };
+        let cfg = NotifyConfig {
+            url,
+            ..config(Channel::Dingtalk)
+        };
         send(&cfg, &message()).unwrap();
         let bodies = seen.lock().unwrap();
         assert_eq!(bodies.len(), 1);
@@ -435,8 +556,14 @@ mod tests {
 
     #[test]
     fn send_reports_a_rejection_without_retrying_or_leaking_the_url() {
-        let (url, seen) = serve(vec![(200, r#"{"errcode":310000,"errmsg":"keywords not in content"}"#)]);
-        let cfg = NotifyConfig { url, ..config(Channel::Dingtalk) };
+        let (url, seen) = serve(vec![(
+            200,
+            r#"{"errcode":310000,"errmsg":"keywords not in content"}"#,
+        )]);
+        let cfg = NotifyConfig {
+            url,
+            ..config(Channel::Dingtalk)
+        };
         let error = send(&cfg, &message()).unwrap_err();
         assert!(matches!(error, NotifyError::Rejected(_)), "{error}");
         assert!(!error.to_string().contains("SECRET"));
@@ -446,7 +573,10 @@ mod tests {
     #[test]
     fn send_retries_a_server_error_once_more() {
         let (url, seen) = serve(vec![(503, "busy"), (200, r#"{"errcode":0}"#)]);
-        let cfg = NotifyConfig { url, ..config(Channel::Dingtalk) };
+        let cfg = NotifyConfig {
+            url,
+            ..config(Channel::Dingtalk)
+        };
         send(&cfg, &message()).unwrap();
         assert_eq!(seen.lock().unwrap().len(), 2);
     }
@@ -454,8 +584,15 @@ mod tests {
     #[test]
     fn an_unreachable_server_is_a_network_error_that_hides_the_url() {
         // Nothing listens on this port.
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let cfg = NotifyConfig { url: format!("http://127.0.0.1:{port}/robot/send?access_token=SECRET"), ..config(Channel::Generic) };
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let cfg = NotifyConfig {
+            url: format!("http://127.0.0.1:{port}/robot/send?access_token=SECRET"),
+            ..config(Channel::Generic)
+        };
         let error = send(&cfg, &message()).unwrap_err();
         assert!(matches!(error, NotifyError::Network(_)), "{error}");
         assert!(!error.to_string().contains("SECRET"));
@@ -464,11 +601,18 @@ mod tests {
     #[test]
     fn alerts_are_on_exactly_when_a_webhook_url_is_set() {
         assert!(!NotifyConfig::default().is_enabled());
-        assert!(!NotifyConfig { url: "  ".into(), ..Default::default() }.is_enabled());
+        assert!(!NotifyConfig {
+            url: "  ".into(),
+            ..Default::default()
+        }
+        .is_enabled());
         assert!(config(Channel::Feishu).is_enabled());
         // Settings saved while the removed `enabled` / `onLoopDone` switches existed still load;
         // the url alone decides.
-        let old: NotifyConfig = serde_json::from_str(r#"{"enabled":false,"onLoopDone":false,"channel":"feishu","url":"https://x.test/h"}"#).unwrap();
+        let old: NotifyConfig = serde_json::from_str(
+            r#"{"enabled":false,"onLoopDone":false,"channel":"feishu","url":"https://x.test/h"}"#,
+        )
+        .unwrap();
         assert!(old.is_enabled());
     }
 }

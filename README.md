@@ -40,6 +40,16 @@ cd ..
 
 只改界面时，`pnpm dev` 可以在浏览器里运行：此时使用内置的模拟后端，不会截图或点击。
 
+macOS / Linux 上也可以用根目录的 [`Makefile`](Makefile)，它只是把上面的命令转发一遍（Windows 默认没有 `make`，继续用上面的命令）。涉及 Rust 的目标会先检查 `OpenCV_DIR`，没加载 OpenCV 环境就直接报错：
+
+```sh
+make dev-web        # 浏览器里的界面开发（模拟后端）
+make dev-desktop    # 桌面应用，等价于 cd apps/desktop && tauri dev
+make check          # CI 跑的那一套：cargo fmt --check、前端类型检查 / 测试 / 构建、clippy、cargo test --workspace
+make fmt            # cargo fmt --all
+make build-desktop  # 转发到 scripts/mac-dev-build.sh（见「打包」）
+```
+
 ### OpenCV 构建环境
 
 Rust 的 `opencv` crate 在编译期需要找到 OpenCV 头文件和 libclang。本项目开发机用的是自行编译的最小静态 OpenCV 4.12（只含 `core`、`imgproc`、`imgcodecs`、`features2d`、`calib3d`、`flann`），通过 `OpenCV_DIR`、`CMAKE_PREFIX_PATH` 指向它。换机器可以用 `scripts/ci/build-opencv.sh <安装目录>` 从官方源码包（校验 SHA-256）重新编译同样的配置，它会打印要设置的环境变量；CI 用的就是这个脚本（macOS 与 Windows 的 Git Bash，Windows 还需要先加载 MSVC 环境）。`.cargo/config.toml` 已为 macOS 加上 Command Line Tools 的 rpath，避免 `tauri dev` 经 node 启动 cargo 时丢失 `DYLD_*` 变量（SIP）而找不到 `libclang.dylib`。
@@ -153,6 +163,20 @@ scripts/mac-dev-build.sh setup    # 只创建证书，不打包
 
 ## 持续集成与发布
 
+### 每次提交的检查（CI）
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在每个 Pull Request 和推送到 `main` 时运行，新提交会取消同一分支上还在跑的旧运行：
+
+| 任务 | 内容 |
+| --- | --- |
+| Rust format | `cargo fmt --all -- --check`，**强制**；本地用 `make fmt` 格式化 |
+| Web checks | `pnpm typecheck`、`pnpm test`，以及 `scripts/ci/` 里更新清单脚本的测试 |
+| Rust macos-arm64 / windows-x64 | 构建 OpenCV 与前端后跑 `cargo clippy --workspace --all-targets` 和 `cargo test --workspace --all-targets`。**clippy 目前只显示警告、不会让 CI 失败**：仓库里已有约 12 条（`liverguard-vision` 6、`liverguard-engine` 4、桌面 crate 1、`liverguard-driver-win` 1），修它们会改动匹配与引擎代码，所以没有顺手改；清掉之后在命令末尾加 `-- -D warnings` |
+
+Rust 任务的环境步骤（libclang、MSVC、OpenCV 缓存与构建、Windows 的 `-L native=` 处理）是从 `release.yml` 的 `build` 任务抄出来的，**改一处要同步另一处**。OpenCV 缓存的 key 与发布相同，CI 和发布共用同一份。缓存规则：Pull Request 写入的缓存只有它自己能读，`main` 上写入的缓存所有 PR 都能读，所以合入 `main` 后的第一次运行最慢。
+
+### 发布
+
 [`.github/workflows/release.yml`](.github/workflows/release.yml) 在 GitHub Actions 上打包 macOS（Apple 芯片，`macos-26`，产物最低支持 macOS 14；必须用 macOS 26 的 SDK 编译，因为 `screencapturekit` 依赖的 `apple-metal` 需要它，`macos-15` 会编译失败；`macos-14` 镜像已于 2026-11-02 下线）和 Windows（x64，`windows-2022`）。仓库是公开的，标准 runner 不计费。只做这两个目标：**不支持 Intel Mac**（GitHub 的 Intel 镜像只保证到 2027 年 8 月，决定不做）、也没有 Windows ARM 的包。
 
 | 触发 | 结果 |
@@ -168,7 +192,7 @@ node scripts/ci/check-version.mjs v0.2.1   # 本地先自检（版本号一致�
 git tag v0.2.1 && git push origin v0.2.1
 ```
 
-产物：macOS 是 `*_aarch64.dmg`，Windows 是 NSIS 的 `*-setup.exe`。
+产物：macOS 是 `*_aarch64.dmg`，Windows 是 NSIS 的 `*-setup.exe`；另外有应用内更新用的 `LiverGuard.app.tar.gz`、`*-setup.exe.sig` 等签名文件和 `latest.json`，见下面「应用内更新」。发布前先确认 Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 已设置，没有的话第一个任务就会失败。
 
 说明与限制：
 
@@ -176,4 +200,35 @@ git tag v0.2.1 && git push origin v0.2.1
 - **首次构建很慢**：要先从源码编译 OpenCV 和整个 Rust 依赖，几十分钟；OpenCV 与 `target` 会被缓存。缓存的作用域规则是：标签触发的运行写入的缓存只有同一个标签能读，所以先在 `main` 上手动运行一次预热，之后的标签才能用上。
 - 发布前会跑前端类型检查和测试，**不会跑 Rust 测试**（`cargo test --workspace` 请在本机发版前跑）。
 - Windows 动态链接 C 运行库（`/MD`），用户机器需要 VC++ 运行库。
-- **验证状况**：OpenCV 构建脚本在本机 macOS 上跑通，并用它的产物编译、测试过 `liverguard-vision`；workflow 通过了 `actionlint`。**workflow 本身还没有在 GitHub 上跑过**，Windows 的 OpenCV 构建与 Tauri 打包更是第一次才会知道结果，见 `DESIGN.md`。
+- **验证状况**：OpenCV 构建脚本在本机 macOS 上跑通，并用它的产物编译、测试过 `liverguard-vision`；workflow 通过了 `actionlint`。**这句话写于早期，已经过时**：维护者（2026-11-11）说明 Windows 的构建在 GitHub 上已经跑通，但这次整理没有去核对运行记录，具体结论以 GitHub Actions 上的实际运行为准；`DESIGN.md` 里的详细经过同样可能落后。**新增的 `ci.yml`、签名产物与 `latest.json` 的生成都还没有在 GitHub 上跑过**。
+
+## 应用内更新
+
+顶栏右侧的「更新」按钮（`apps/desktop/web/src/components/UpdateButton.tsx`）在应用启动时静默检查一次：有新版本就在按钮上显示绿点，点击后弹窗确认，再下载、安装并重启。没有新版本或网络不通时不打扰用户；手动点击会提示「已经是最新版本」或失败原因。脚本正在运行时不会安装。浏览器里的 `pnpm dev`（模拟后端）没有这个按钮。
+
+实现用的是官方的 `tauri-plugin-updater` 与 `tauri-plugin-process`（重启），前端直接调用插件，没有新增 Rust 命令。检查地址是 `tauri.conf.json` 里的 `plugins.updater.endpoints`：`https://github.com/dailycoderlab/liver-guard/releases/latest/download/latest.json`。这个地址**只有 Release 被 Publish 之后才可访问**（草稿对客户端不可见），也只指向最新的非预发布版本，所以发布一个 `-beta` 标签并 Publish 后，所有用户都会收到它。
+
+### 签名密钥
+
+updater 会用 `plugins.updater.pubkey` 校验每个更新包的签名，这一步无法关闭。
+
+```text
+私钥  → 你自己的备份 + 仓库的 Actions Secret TAURI_SIGNING_PRIVATE_KEY
+公钥  → tauri.conf.json 的 plugins.updater.pubkey（minisign 公钥，ID E4313EDFB51A9F07）
+```
+
+- 密钥对无密码，所以**不要**建 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 这个 Secret。
+- **丢失私钥，或换一对新密钥，会让所有已安装的版本再也无法自动更新**，只能手动重装。换密钥前先确认有这个代价。
+- 生成（只在需要新密钥时做）：`cd apps/desktop/web && ./node_modules/.bin/tauri signer generate --ci -w ../../../.tauri/liverguard.key`。`.tauri/` 已被 `.gitignore` 忽略。把 `.pub` 文件的内容原样（它本身就是 base64 文本，不要再编码一次）写进 `pubkey`，把私钥文件全文粘贴进 Secret，备份后删掉工作目录里的两个文件。
+- 本机 `tauri build`（包括 `scripts/mac-dev-build.sh`）不生成更新包，所以不需要私钥；`createUpdaterArtifacts` 只在 `release.yml` 里通过 `--config` 打开。
+
+### 发布时生成什么
+
+`release.yml` 在打包时用私钥给更新包签名（macOS 必须用 `--bundles app,dmg`：只写 `dmg` 时 Tauri 会警告“没有启用更新的目标”，不生成 `.app.tar.gz`，这一点已在本机实测）：macOS 是 `LiverGuard.app.tar.gz` 加 `.sig`，Windows 的 NSIS 安装包本身就是更新包，旁边是 `*-setup.exe.sig`。`release` 任务再用 [`scripts/ci/generate-update-manifest.mjs`](scripts/ci/generate-update-manifest.mjs) 生成 `latest.json`（`darwin-aarch64` 与 `windows-x86_64` 两个平台，缺任何一个更新包或签名都会失败），和安装包一起上传到草稿 Release。
+
+### 限制与未验证
+
+- **已安装的 v0.2.0 不含更新功能**，需要手动装一次带更新功能的版本，之后才会自动更新。
+- macOS 是 ad-hoc 签名：更新后的应用在系统看来可能是一个新应用，**屏幕录制和辅助功能的授权可能要重新给一次**（和重新打包时的现象相同）。Windows 上以管理员身份运行的 LiverGuard 更新时可能需要提权，安装模式是 `passive`（显示进度、不需要点击）。
+- **没有验证**：从旧版本更新到新版本的完整流程（至少要发布两个版本才能验证）、`latest.json` 在真实 Release 上的内容、Windows 的更新包与重启、更新后的权限授权是否保留。已验证的只有：前端状态机与清单脚本的单元测试、Rust 侧能编译，以及本机（macOS arm64）带私钥执行 `tauri build --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":true}}'` 确实产出 `LiverGuard.app.tar.gz` 和 `.sig`，签名里的密钥 ID 与 `pubkey` 对应；Windows 的更新包产物没有在本机验证。
+

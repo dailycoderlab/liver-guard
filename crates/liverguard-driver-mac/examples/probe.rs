@@ -51,7 +51,11 @@ fn main() {
         }
         let started = std::time::Instant::now();
         let again = capturer.grab(Target::Window(target.number));
-        println!("second window capture (cached handles): ok={} in {:?}", again.is_ok(), started.elapsed());
+        println!(
+            "second window capture (cached handles): ok={} in {:?}",
+            again.is_ok(),
+            started.elapsed()
+        );
     }
 }
 

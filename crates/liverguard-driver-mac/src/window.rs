@@ -6,10 +6,11 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_graphics::display::CGDisplay;
 use core_graphics::window::{
-    copy_window_info, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly,
+    copy_window_info, kCGNullWindowID, kCGWindowListExcludeDesktopElements,
+    kCGWindowListOptionOnScreenOnly,
 };
-use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 use liverguard_ir::Rect;
+use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowInfo {
@@ -23,15 +24,24 @@ pub struct WindowInfo {
 
 impl std::fmt::Display for WindowInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let title = if self.title.is_empty() { "(untitled)" } else { &self.title };
-        write!(f, "#{} {} — {} [{:.0}x{:.0}]", self.number, self.owner, title, self.bounds.w, self.bounds.h)
+        let title = if self.title.is_empty() {
+            "(untitled)"
+        } else {
+            &self.title
+        };
+        write!(
+            f,
+            "#{} {} — {} [{:.0}x{:.0}]",
+            self.number, self.owner, title, self.bounds.w, self.bounds.h
+        )
     }
 }
 
 type Info = CFDictionary<CFString, CFType>;
 
 fn get(info: &Info, key: &'static str) -> Option<CFType> {
-    info.find(CFString::from_static_string(key)).map(|item| item.clone())
+    info.find(CFString::from_static_string(key))
+        .map(|item| item.clone())
 }
 
 fn number(info: &Info, key: &'static str) -> Option<f64> {
@@ -39,13 +49,22 @@ fn number(info: &Info, key: &'static str) -> Option<f64> {
 }
 
 fn text(info: &Info, key: &'static str) -> String {
-    get(info, key).and_then(|v| v.downcast::<CFString>()).map(|s| s.to_string()).unwrap_or_default()
+    get(info, key)
+        .and_then(|v| v.downcast::<CFString>())
+        .map(|s| s.to_string())
+        .unwrap_or_default()
 }
 
 fn parse(info: &Info) -> Option<WindowInfo> {
     let bounds = get(info, "kCGWindowBounds")?.downcast::<CFDictionary>()?;
-    let bounds: CFDictionary<CFString, CFType> = unsafe { CFDictionary::wrap_under_get_rule(bounds.as_concrete_TypeRef()) };
-    let rect = Rect::new(number(&bounds, "X")?, number(&bounds, "Y")?, number(&bounds, "Width")?, number(&bounds, "Height")?);
+    let bounds: CFDictionary<CFString, CFType> =
+        unsafe { CFDictionary::wrap_under_get_rule(bounds.as_concrete_TypeRef()) };
+    let rect = Rect::new(
+        number(&bounds, "X")?,
+        number(&bounds, "Y")?,
+        number(&bounds, "Width")?,
+        number(&bounds, "Height")?,
+    );
     Some(WindowInfo {
         number: number(info, "kCGWindowNumber")? as u32,
         pid: number(info, "kCGWindowOwnerPID")? as i32,
@@ -63,7 +82,9 @@ pub fn list_windows(on_screen_only: bool, include_all_layers: bool) -> Vec<Windo
     if on_screen_only {
         options |= kCGWindowListOptionOnScreenOnly;
     }
-    let Some(array) = copy_window_info(options, kCGNullWindowID) else { return vec![] };
+    let Some(array) = copy_window_info(options, kCGNullWindowID) else {
+        return vec![];
+    };
 
     let mut windows = Vec::new();
     for item in array.iter() {
@@ -90,12 +111,18 @@ pub fn find_window(query: &str) -> Option<WindowInfo> {
     candidates
         .iter()
         .find(|w| w.owner.to_lowercase().contains(&needle))
-        .or_else(|| candidates.iter().find(|w| w.title.to_lowercase().contains(&needle)))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|w| w.title.to_lowercase().contains(&needle))
+        })
         .cloned()
 }
 
 pub fn window_by_number(number: u32) -> Option<WindowInfo> {
-    list_windows(false, true).into_iter().find(|w| w.number == number)
+    list_windows(false, true)
+        .into_iter()
+        .find(|w| w.number == number)
 }
 
 /// Windows stacked above `target` that cover part of it. Window-only capture is
@@ -117,7 +144,8 @@ pub fn occluding_windows(target: &WindowInfo, min_overlap: f64) -> Vec<WindowInf
 
 /// Bring the window's app forward so injected events reach it.
 pub fn activate(window: &WindowInfo) -> bool {
-    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(window.pid) else {
+    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(window.pid)
+    else {
         return false;
     };
     #[allow(deprecated)]
@@ -127,5 +155,10 @@ pub fn activate(window: &WindowInfo) -> bool {
 /// Main display in global logical points.
 pub fn main_display_bounds() -> Rect {
     let bounds = CGDisplay::main().bounds();
-    Rect::new(bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height)
+    Rect::new(
+        bounds.origin.x,
+        bounds.origin.y,
+        bounds.size.width,
+        bounds.size.height,
+    )
 }

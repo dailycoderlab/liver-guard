@@ -30,7 +30,12 @@ pub struct ScaleSpec {
 
 impl Default for ScaleSpec {
     fn default() -> Self {
-        Self { mode: ScaleMode::Auto, min: 0.7, max: 1.5, steps: 9 }
+        Self {
+            mode: ScaleMode::Auto,
+            min: 0.7,
+            max: 1.5,
+            steps: 9,
+        }
     }
 }
 
