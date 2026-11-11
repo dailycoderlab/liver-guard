@@ -5,13 +5,15 @@ use std::ffi::c_void;
 use liverguard_ir::Rect;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
-use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
+use windows::Win32::Graphics::Dwm::{
+    DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
+};
 use windows::Win32::Graphics::Gdi::{MonitorFromPoint, HMONITOR, MONITOR_DEFAULTTOPRIMARY};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetAncestor, GetWindowLongW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow, GA_ROOT, GWL_EXSTYLE,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_RESTORE, WS_EX_TOOLWINDOW,
-    GetSystemMetrics, GetClassNameW,
+    EnumWindows, GetAncestor, GetClassNameW, GetSystemMetrics, GetWindowLongW, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    SetForegroundWindow, ShowWindow, GA_ROOT, GWL_EXSTYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_RESTORE, WS_EX_TOOLWINDOW,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,8 +28,16 @@ pub struct WindowInfo {
 
 impl std::fmt::Display for WindowInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let title = if self.title.is_empty() { "(untitled)" } else { &self.title };
-        write!(f, "#{} {} — {} [{:.0}x{:.0}]", self.number, self.owner, title, self.bounds.w, self.bounds.h)
+        let title = if self.title.is_empty() {
+            "(untitled)"
+        } else {
+            &self.title
+        };
+        write!(
+            f,
+            "#{} {} — {} [{:.0}x{:.0}]",
+            self.number, self.owner, title, self.bounds.w, self.bounds.h
+        )
     }
 }
 
@@ -56,18 +66,32 @@ fn class_name(window: HWND) -> String {
 }
 
 fn process_name(pid: u32) -> String {
-    use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
     unsafe {
-        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return String::new() };
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return String::new();
+        };
         let mut buffer = [0u16; 512];
         let mut len = buffer.len() as u32;
-        let result = QueryFullProcessImageNameW(process, PROCESS_NAME_FORMAT(0), windows::core::PWSTR(buffer.as_mut_ptr()), &mut len);
+        let result = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        );
         let _ = windows::Win32::Foundation::CloseHandle(process);
         if result.is_err() {
             return String::new();
         }
         let path = String::from_utf16_lossy(&buffer[..len as usize]);
-        path.rsplit(['\\', '/']).next().unwrap_or("").trim_end_matches(".exe").to_string()
+        path.rsplit(['\\', '/'])
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(".exe")
+            .to_string()
     }
 }
 
@@ -86,14 +110,26 @@ pub fn frame_bounds(window: HWND) -> Option<Rect> {
         if !ok {
             GetWindowRect(window, &mut rect).ok()?;
         }
-        Some(Rect::new(rect.left as f64, rect.top as f64, (rect.right - rect.left) as f64, (rect.bottom - rect.top) as f64))
+        Some(Rect::new(
+            rect.left as f64,
+            rect.top as f64,
+            (rect.right - rect.left) as f64,
+            (rect.bottom - rect.top) as f64,
+        ))
     }
 }
 
 fn is_cloaked(window: HWND) -> bool {
     unsafe {
         let mut cloaked = 0u32;
-        DwmGetWindowAttribute(window, DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut c_void, 4).is_ok() && cloaked != 0
+        DwmGetWindowAttribute(
+            window,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut u32 as *mut c_void,
+            4,
+        )
+        .is_ok()
+            && cloaked != 0
     }
 }
 
@@ -102,7 +138,13 @@ fn describe(window: HWND) -> Option<WindowInfo> {
         let bounds = frame_bounds(window)?;
         let mut pid = 0u32;
         GetWindowThreadProcessId(window, Some(&mut pid));
-        Some(WindowInfo { number: window.0 as isize, pid, owner: process_name(pid), title: text(window), bounds })
+        Some(WindowInfo {
+            number: window.0 as isize,
+            pid,
+            owner: process_name(pid),
+            title: text(window),
+            bounds,
+        })
     }
 }
 
@@ -111,18 +153,27 @@ fn describe(window: HWND) -> Option<WindowInfo> {
 pub fn list_windows() -> Vec<WindowInfo> {
     unsafe extern "system" fn collect(window: HWND, lparam: LPARAM) -> BOOL {
         let out = &mut *(lparam.0 as *mut Vec<WindowInfo>);
-        if !IsWindowVisible(window).as_bool() || is_cloaked(window) || GetAncestor(window, GA_ROOT) != window {
+        if !IsWindowVisible(window).as_bool()
+            || is_cloaked(window)
+            || GetAncestor(window, GA_ROOT) != window
+        {
             return true.into();
         }
         if GetWindowLongW(window, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0 {
             return true.into();
         }
         // The shell's own windows are never a script target.
-        if matches!(class_name(window).as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+        if matches!(
+            class_name(window).as_str(),
+            "Progman" | "WorkerW" | "Shell_TrayWnd"
+        ) {
             return true.into();
         }
         if let Some(info) = describe(window) {
-            if info.bounds.w >= 40.0 && info.bounds.h >= 40.0 && !(info.title.is_empty() && info.owner.is_empty()) {
+            if info.bounds.w >= 40.0
+                && info.bounds.h >= 40.0
+                && !(info.title.is_empty() && info.owner.is_empty())
+            {
                 out.push(info);
             }
         }
@@ -131,7 +182,10 @@ pub fn list_windows() -> Vec<WindowInfo> {
 
     let mut windows: Vec<WindowInfo> = Vec::new();
     unsafe {
-        let _ = EnumWindows(Some(collect), LPARAM(&mut windows as *mut Vec<WindowInfo> as isize));
+        let _ = EnumWindows(
+            Some(collect),
+            LPARAM(&mut windows as *mut Vec<WindowInfo> as isize),
+        );
     }
     windows
 }
@@ -146,7 +200,11 @@ pub fn find_window(query: &str) -> Option<WindowInfo> {
     windows
         .iter()
         .find(|w| w.owner.to_lowercase().contains(&needle))
-        .or_else(|| windows.iter().find(|w| w.title.to_lowercase().contains(&needle)))
+        .or_else(|| {
+            windows
+                .iter()
+                .find(|w| w.title.to_lowercase().contains(&needle))
+        })
         .cloned()
 }
 
@@ -202,5 +260,12 @@ pub fn virtual_screen() -> Rect {
 /// The primary monitor's rectangle in physical pixels.
 pub fn primary_display_bounds() -> Rect {
     use windows::Win32::UI::WindowsAndMessaging::{SM_CXSCREEN, SM_CYSCREEN};
-    unsafe { Rect::new(0.0, 0.0, GetSystemMetrics(SM_CXSCREEN) as f64, GetSystemMetrics(SM_CYSCREEN) as f64) }
+    unsafe {
+        Rect::new(
+            0.0,
+            0.0,
+            GetSystemMetrics(SM_CXSCREEN) as f64,
+            GetSystemMetrics(SM_CYSCREEN) as f64,
+        )
+    }
 }

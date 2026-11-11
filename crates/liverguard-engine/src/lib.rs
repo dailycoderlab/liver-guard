@@ -19,21 +19,29 @@ pub use error::{Reason, RunError};
 pub use interp::{Interpreter, RunResult, RunState};
 pub use report::{EventSink, LogLine, NodeState, Reporter, RunEvent};
 
-use serde::Serialize;
 use liverguard_ir::{IrDoc, Rect, Target};
 use liverguard_vision::{AssetStore, MatcherEngine};
+use serde::Serialize;
 
 /// Check a document and make sure every asset it needs is on disk.
 pub fn prepare(ir: &IrDoc, assets: &mut AssetStore) -> Result<(), String> {
     let problems = ir.validate();
     let errors = IrDoc::errors(&problems);
     if !errors.is_empty() {
-        return Err(errors.iter().map(|p| p.message.clone()).collect::<Vec<_>>().join("; "));
+        return Err(errors
+            .iter()
+            .map(|p| p.message.clone())
+            .collect::<Vec<_>>()
+            .join("; "));
     }
     for target in ir.targets.values() {
         if let Target::Template(template) = target {
             let sha = &template.asset;
-            if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+            if sha.len() != 64
+                || !sha
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            {
                 return Err("Invalid asset hash".to_string());
             }
             assets.get(sha).map_err(|e| e.to_string())?;
@@ -67,7 +75,13 @@ pub fn run_local(
     if let Some(sink) = options.sink {
         reporter.subscribe(sink);
     }
-    let mut interpreter = Interpreter::new(ir, driver, Box::new(MatcherEngine::new(assets)), reporter, stop);
+    let mut interpreter = Interpreter::new(
+        ir,
+        driver,
+        Box::new(MatcherEngine::new(assets)),
+        reporter,
+        stop,
+    );
     interpreter.set_rounds(options.rounds);
     if let Some(alert) = options.alert {
         interpreter.set_alert(alert);
@@ -94,7 +108,11 @@ pub struct ProbeRow {
 }
 
 /// Dry run: grab one frame and locate every target in it. Nothing is clicked.
-pub fn probe(ir: &IrDoc, driver: &mut dyn Driver, mut assets: AssetStore) -> Result<Vec<ProbeRow>, String> {
+pub fn probe(
+    ir: &IrDoc,
+    driver: &mut dyn Driver,
+    mut assets: AssetStore,
+) -> Result<Vec<ProbeRow>, String> {
     prepare(ir, &mut assets)?;
     let frame = driver.capture().map_err(|e| e.to_string())?;
     let mut engine = MatcherEngine::without_reuse(assets);
@@ -104,7 +122,9 @@ pub fn probe(ir: &IrDoc, driver: &mut dyn Driver, mut assets: AssetStore) -> Res
             Target::Template(t) => Some(t.threshold),
             Target::Point(_) => None,
         };
-        let hit = engine.resolve(target, name, &frame, (0.0, 0.0)).map_err(|e| e.to_string())?;
+        let hit = engine
+            .resolve(target, name, &frame, (0.0, 0.0))
+            .map_err(|e| e.to_string())?;
         rows.push(match hit {
             Some(hit) => ProbeRow {
                 target: name.clone(),

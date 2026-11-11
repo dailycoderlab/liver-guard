@@ -9,6 +9,10 @@ pub fn run() {
     platform::prepare_process();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // In-app updates: the web app calls these plugins directly (src/api/tauri.ts).
+        // The updater verifies every package against `plugins.updater.pubkey`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             list_scripts,

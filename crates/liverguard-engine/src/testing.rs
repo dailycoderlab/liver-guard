@@ -1,12 +1,12 @@
 //! Test support: synthetic game-like scenes, a recording driver and canned
 //! resolvers. Public so the CLI and driver crates can reuse it in their tests.
 
-use opencv::prelude::MatTrait;
-use opencv::core::{Mat, MatTraitConst, Point, Rect as CvRect, Scalar, Vec3b, CV_8UC3};
-use opencv::imgproc::{self, FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA};
 use liverguard_ir::geometry::py_round;
 use liverguard_ir::{AssetBox, Bounds, Rect, Target, TemplateTarget};
 use liverguard_vision::{AssetStore, Frame, Hit, Resolver};
+use opencv::core::{Mat, MatTraitConst, Point, Rect as CvRect, Scalar, Vec3b, CV_8UC3};
+use opencv::imgproc::{self, FONT_HERSHEY_SIMPLEX, LINE_8, LINE_AA};
+use opencv::prelude::MatTrait;
 
 use crate::driver::{Driver, DriverError, DriverResult, PointerAction};
 
@@ -15,8 +15,24 @@ pub const BUTTON_SIZE: (f64, f64) = (120.0, 56.0);
 
 fn draw_button(image: &mut Mat, x: i32, y: i32, w: i32, h: i32, label: &str) {
     let rect = CvRect::new(x, y, w, h);
-    imgproc::rectangle(image, rect, Scalar::new(196.0, 120.0, 60.0, 0.0), -1, LINE_8, 0).unwrap();
-    imgproc::rectangle(image, rect, Scalar::new(250.0, 240.0, 220.0, 0.0), 2.max(w / 40), LINE_8, 0).unwrap();
+    imgproc::rectangle(
+        image,
+        rect,
+        Scalar::new(196.0, 120.0, 60.0, 0.0),
+        -1,
+        LINE_8,
+        0,
+    )
+    .unwrap();
+    imgproc::rectangle(
+        image,
+        rect,
+        Scalar::new(250.0, 240.0, 220.0, 0.0),
+        2.max(w / 40),
+        LINE_8,
+        0,
+    )
+    .unwrap();
     let font_scale = 0.4f64.max(h as f64 / 90.0);
     let thickness = 1.max(py_round(h as f64 / 40.0) as i32);
     imgproc::put_text(
@@ -44,7 +60,8 @@ pub fn make_scene(
 ) -> Frame {
     let width = py_round(width_pt * scale) as i32;
     let height = py_round(height_pt * scale) as i32;
-    let mut image = Mat::new_rows_cols_with_default(height, width, CV_8UC3, Scalar::all(0.0)).unwrap();
+    let mut image =
+        Mat::new_rows_cols_with_default(height, width, CV_8UC3, Scalar::all(0.0)).unwrap();
 
     // Deterministic noise (xorshift) so tests never flake.
     let mut state: u64 = 0x2545_F491_4F6C_DD1D;
@@ -62,7 +79,10 @@ pub fn make_scene(
     let bw = py_round(button_size_pt.0 * scale) as i32;
     let bh = py_round(button_size_pt.1 * scale) as i32;
     let place = |c: (f64, f64)| -> (i32, i32) {
-        (py_round(c.0 * scale - bw as f64 / 2.0) as i32, py_round(c.1 * scale - bh as f64 / 2.0) as i32)
+        (
+            py_round(c.0 * scale - bw as f64 / 2.0) as i32,
+            py_round(c.1 * scale - bh as f64 / 2.0) as i32,
+        )
     };
     let (bx, by) = place(button_center_pt);
     draw_button(&mut image, bx, by, bw, bh, "START");
@@ -89,10 +109,18 @@ pub fn crop_asset(image: &Mat, center_pt: (f64, f64), size_pt: (f64, f64), scale
     liverguard_vision::frame::encode(&patch, ".png", &opencv::core::Vector::new()).unwrap()
 }
 
-pub fn button_target(asset_bytes: &[u8], size_pt: (f64, f64), record_scale: f64, record_width: f64) -> TemplateTarget {
+pub fn button_target(
+    asset_bytes: &[u8],
+    size_pt: (f64, f64),
+    record_scale: f64,
+    record_width: f64,
+) -> TemplateTarget {
     let mut target = TemplateTarget::new(
         AssetStore::hash_bytes(asset_bytes),
-        AssetBox { w: size_pt.0 * record_scale, h: size_pt.1 * record_scale },
+        AssetBox {
+            w: size_pt.0 * record_scale,
+            h: size_pt.1 * record_scale,
+        },
         [0.0, 0.0, 1.0, 1.0],
     );
     target.record_scale = record_scale;
@@ -104,13 +132,19 @@ pub fn button_target(asset_bytes: &[u8], size_pt: (f64, f64), record_scale: f64,
 }
 
 /// A real matcher over the synthetic scene, with the button registered as target "btn".
-pub fn scene_engine(record_scale: f64) -> (liverguard_vision::MatcherEngine, TemplateTarget, Frame) {
+pub fn scene_engine(
+    record_scale: f64,
+) -> (liverguard_vision::MatcherEngine, TemplateTarget, Frame) {
     let scene = make_scene(record_scale, 600.0, 400.0, BUTTON_CENTER, BUTTON_SIZE, None);
     let asset = crop_asset(&scene.image, BUTTON_CENTER, BUTTON_SIZE, record_scale);
     let target = button_target(&asset, BUTTON_SIZE, record_scale, 600.0);
     let mut store = AssetStore::in_memory();
     store.put_bytes(&target.asset, &asset).unwrap();
-    (liverguard_vision::MatcherEngine::without_reuse(store), target, scene)
+    (
+        liverguard_vision::MatcherEngine::without_reuse(store),
+        target,
+        scene,
+    )
 }
 
 /// Records every injected input against a fixed screen.
@@ -236,18 +270,32 @@ impl FixedResolver {
     }
 
     pub fn none() -> Self {
-        Self { hit: None, reused: false }
+        Self {
+            hit: None,
+            reused: false,
+        }
     }
 }
 
 impl Resolver for FixedResolver {
-    fn resolve(&mut self, _target: &Target, _id: &str, _frame: &Frame, offset: (f64, f64)) -> liverguard_vision::Result<Option<Hit>> {
-        let Some(mut hit) = self.hit.clone() else { return Ok(None) };
+    fn resolve(
+        &mut self,
+        _target: &Target,
+        _id: &str,
+        _frame: &Frame,
+        offset: (f64, f64),
+    ) -> liverguard_vision::Result<Option<Hit>> {
+        let Some(mut hit) = self.hit.clone() else {
+            return Ok(None);
+        };
         if self.reused {
             hit.reused = true;
             hit.strategy = "reuse".to_string();
             if offset != (0.0, 0.0) {
-                hit.point = (hit.point.0 + offset.0 * hit.rect.w, hit.point.1 + offset.1 * hit.rect.h);
+                hit.point = (
+                    hit.point.0 + offset.0 * hit.rect.w,
+                    hit.point.1 + offset.1 * hit.rect.h,
+                );
             }
         }
         Ok(Some(hit))
@@ -278,13 +326,29 @@ struct ScreenState {
 
 impl Screen {
     pub fn show(self, name: &str, score: f64) -> Self {
-        self.inner.lock().unwrap().visible.insert(name.into(), (Rect { x: 100.0, y: 100.0, w: 40.0, h: 20.0 }, score));
+        self.inner.lock().unwrap().visible.insert(
+            name.into(),
+            (
+                Rect {
+                    x: 100.0,
+                    y: 100.0,
+                    w: 40.0,
+                    h: 20.0,
+                },
+                score,
+            ),
+        );
         self
     }
 
     pub fn appear_after(self, name: &str, resolves: u32, score: f64) -> Self {
         let screen = self.show(name, score);
-        screen.inner.lock().unwrap().appear_after.insert(name.into(), resolves);
+        screen
+            .inner
+            .lock()
+            .unwrap()
+            .appear_after
+            .insert(name.into(), resolves);
         screen
     }
 
@@ -293,11 +357,19 @@ impl Screen {
     }
 
     pub fn calls(&self, name: &str) -> u32 {
-        self.inner.lock().unwrap().calls.get(name).copied().unwrap_or(0)
+        self.inner
+            .lock()
+            .unwrap()
+            .calls
+            .get(name)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub fn resolver(&self) -> Box<dyn Resolver> {
-        Box::new(ScreenResolver { screen: self.clone() })
+        Box::new(ScreenResolver {
+            screen: self.clone(),
+        })
     }
 }
 
@@ -306,14 +378,24 @@ struct ScreenResolver {
 }
 
 impl Resolver for ScreenResolver {
-    fn resolve(&mut self, _target: &Target, id: &str, _frame: &Frame, _offset: (f64, f64)) -> liverguard_vision::Result<Option<Hit>> {
+    fn resolve(
+        &mut self,
+        _target: &Target,
+        id: &str,
+        _frame: &Frame,
+        _offset: (f64, f64),
+    ) -> liverguard_vision::Result<Option<Hit>> {
         let mut state = self.screen.inner.lock().unwrap();
         let calls = {
             let entry = state.calls.entry(id.to_string()).or_insert(0);
             *entry += 1;
             *entry
         };
-        if state.appear_after.get(id).is_some_and(|after| calls <= *after) {
+        if state
+            .appear_after
+            .get(id)
+            .is_some_and(|after| calls <= *after)
+        {
             return Ok(None);
         }
         Ok(state.visible.get(id).map(|(rect, score)| Hit {
@@ -331,7 +413,11 @@ impl Resolver for ScreenResolver {
 /// A template with default thresholds (0.85 / 0.7). The `Screen` resolver never
 /// reads its pixels; it only needs to exist so the graph validates.
 pub fn stub_target() -> Target {
-    Target::Template(TemplateTarget::new("0".repeat(64), AssetBox { w: 40.0, h: 20.0 }, [0.0, 0.0, 1.0, 1.0]))
+    Target::Template(TemplateTarget::new(
+        "0".repeat(64),
+        AssetBox { w: 40.0, h: 20.0 },
+        [0.0, 0.0, 1.0, 1.0],
+    ))
 }
 
 /// Fluent construction of test documents.
@@ -351,7 +437,13 @@ impl GraphBuilder {
     }
 
     pub fn node(mut self, id: &str, kind: NodeKind) -> Self {
-        self.doc.flow.nodes.push(Node { id: id.into(), pos: Default::default(), label: None, max_visits: None, kind });
+        self.doc.flow.nodes.push(Node {
+            id: id.into(),
+            pos: Default::default(),
+            label: None,
+            max_visits: None,
+            kind,
+        });
         self
     }
 

@@ -5,9 +5,11 @@
 //! fallback, with later near-duplicates removed. Port of the reference
 //! detector, including its integer arithmetic.
 
-use opencv::prelude::*;
-use opencv::core::{self, Mat, MatTraitConst, MatTraitConstManual, Point, Scalar, Size, CV_16S, CV_32S, CV_8U};
+use opencv::core::{
+    self, Mat, MatTraitConst, MatTraitConstManual, Point, Scalar, Size, CV_16S, CV_32S, CV_8U,
+};
 use opencv::imgproc;
+use opencv::prelude::*;
 use serde::Serialize;
 
 use crate::util::Result;
@@ -59,7 +61,14 @@ pub struct DetectOptions {
 
 impl Default for DetectOptions {
     fn default() -> Self {
-        Self { scale: 1.0, min_side: 24.0, max_side: 220.0, padding: 0.08, strictness: Strictness::Normal, ax_box: None }
+        Self {
+            scale: 1.0,
+            min_side: 24.0,
+            max_side: 220.0,
+            padding: 0.08,
+            strictness: Strictness::Normal,
+            ax_box: None,
+        }
     }
 }
 
@@ -114,11 +123,21 @@ fn border_coverage(binary: &[u8], width: i32, height: i32, c: &Component) -> f64
     }
 }
 
-fn dedupe(candidates: Vec<Candidate>, width: i32, height: i32, max_side: f64, padding: f64) -> Vec<Candidate> {
+fn dedupe(
+    candidates: Vec<Candidate>,
+    width: i32,
+    height: i32,
+    max_side: f64,
+    padding: f64,
+) -> Vec<Candidate> {
     let mut out: Vec<Candidate> = Vec::new();
     for candidate in candidates {
         let exact = candidate.kind == CandidateKind::Ax;
-        let grow = if exact { 0.0 } else { candidate.w.max(candidate.h) * padding };
+        let grow = if exact {
+            0.0
+        } else {
+            candidate.w.max(candidate.h) * padding
+        };
         let (mut x, mut y) = (candidate.x - grow, candidate.y - grow);
         let (mut w, mut h) = (candidate.w + 2.0 * grow, candidate.h + 2.0 * grow);
         if !exact && (w > max_side || h > max_side) {
@@ -150,7 +169,13 @@ fn dedupe(candidates: Vec<Candidate>, width: i32, height: i32, max_side: f64, pa
 
 /// Fixed-range flood fill around the seed; comparing each pixel to the original
 /// seed rather than its neighbour keeps gradients from leaking.
-fn flood_region(rgb: &Mat, sx: i32, sy: i32, tolerance: i32, max_pixels: i32) -> Result<Option<Component>> {
+fn flood_region(
+    rgb: &Mat,
+    sx: i32,
+    sy: i32,
+    tolerance: i32,
+    max_pixels: i32,
+) -> Result<Option<Component>> {
     let (h, w) = (rgb.rows(), rgb.cols());
     if sx < 0 || sy < 0 || sx >= w || sy >= h {
         return Ok(None);
@@ -160,11 +185,26 @@ fn flood_region(rgb: &Mat, sx: i32, sy: i32, tolerance: i32, max_pixels: i32) ->
     let mut rect = core::Rect::default();
     let tol = Scalar::all(tolerance as f64);
     let flags = 8 | imgproc::FLOODFILL_FIXED_RANGE | imgproc::FLOODFILL_MASK_ONLY | (1 << 8);
-    let area = imgproc::flood_fill_mask(&mut image, &mut mask, Point::new(sx, sy), Scalar::all(0.0), Some(&mut rect), tol, tol, flags)?;
+    let area = imgproc::flood_fill_mask(
+        &mut image,
+        &mut mask,
+        Point::new(sx, sy),
+        Scalar::all(0.0),
+        Some(&mut rect),
+        tol,
+        tol,
+        flags,
+    )?;
     if area > max_pixels {
         return Ok(None);
     }
-    Ok(Some(Component { x0: rect.x, y0: rect.y, x1: rect.x + rect.width - 1, y1: rect.y + rect.height - 1, area }))
+    Ok(Some(Component {
+        x0: rect.x,
+        y0: rect.y,
+        x1: rect.x + rect.width - 1,
+        y1: rect.y + rect.height - 1,
+        area,
+    }))
 }
 
 fn mat_i32(mat: &Mat) -> Result<Vec<i32>> {
@@ -176,23 +216,46 @@ fn mat_i32(mat: &Mat) -> Result<Vec<i32>> {
 /// `options.scale` is device pixels per logical point; `min_side` and `max_side`
 /// are logical points. Click, accessibility and returned boxes are image pixels.
 /// The fallback is always proposed but may be removed as a near-duplicate.
-pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) -> Result<Vec<Candidate>> {
+pub fn detect_candidates(
+    bgr: &Mat,
+    click: (f64, f64),
+    options: &DetectOptions,
+) -> Result<Vec<Candidate>> {
     if bgr.typ() != core::CV_8UC3 {
-        return Err(crate::util::VisionError::Invalid("detect needs an 8-bit BGR image".into()));
+        return Err(crate::util::VisionError::Invalid(
+            "detect needs an 8-bit BGR image".into(),
+        ));
     }
     let (height, width) = (bgr.rows(), bgr.cols());
     if width == 0 || height == 0 {
-        return Err(crate::util::VisionError::Invalid("image must have nonzero width and height".into()));
+        return Err(crate::util::VisionError::Invalid(
+            "image must have nonzero width and height".into(),
+        ));
     }
 
-    let scale = if options.scale == 0.0 { 1.0 } else { options.scale };
+    let scale = if options.scale == 0.0 {
+        1.0
+    } else {
+        options.scale
+    };
     let (min_side, max_side) = (options.min_side * scale, options.max_side * scale);
     let mut candidates: Vec<Candidate> = Vec::new();
     if let Some(ax) = options.ax_box.filter(|b| b.w > 0.0 && b.h > 0.0) {
-        candidates.push(Candidate { x: ax.x, y: ax.y, w: ax.w, h: ax.h, kind: CandidateKind::Ax, score: 1.0 });
+        candidates.push(Candidate {
+            x: ax.x,
+            y: ax.y,
+            w: ax.w,
+            h: ax.h,
+            kind: CandidateKind::Ax,
+            score: 1.0,
+        });
     }
 
-    let downsample: i32 = if (width as i64) * (height as i64) > 2_500_000 { 2 } else { 1 };
+    let downsample: i32 = if (width as i64) * (height as i64) > 2_500_000 {
+        2
+    } else {
+        1
+    };
     let (h, w) = (height / downsample, width / downsample);
     // The trailing row/column is dropped for odd dimensions.
     let src = bgr.data_bytes()?;
@@ -203,7 +266,9 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
             rgb_bytes.extend_from_slice(&src[base..base + 3]);
         }
     }
-    let rgb = Mat::new_rows_cols_with_data(h, w * 3, &rgb_bytes)?.reshape(3, h)?.try_clone()?;
+    let rgb = Mat::new_rows_cols_with_data(h, w * 3, &rgb_bytes)?
+        .reshape(3, h)?
+        .try_clone()?;
     let click_x = click.0 / downsample as f64;
     let click_y = click.1 / downsample as f64;
 
@@ -219,20 +284,62 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
     let mut sums = Mat::default();
     let mut counts = Mat::default();
     let ones = Mat::new_rows_cols_with_default(h, w, CV_8U, Scalar::all(1.0))?;
-    imgproc::box_filter(&gray, &mut sums, CV_32S, Size::new(3, 3), Point::new(-1, -1), false, core::BORDER_CONSTANT)?;
-    imgproc::box_filter(&ones, &mut counts, CV_32S, Size::new(3, 3), Point::new(-1, -1), false, core::BORDER_CONSTANT)?;
+    imgproc::box_filter(
+        &gray,
+        &mut sums,
+        CV_32S,
+        Size::new(3, 3),
+        Point::new(-1, -1),
+        false,
+        core::BORDER_CONSTANT,
+    )?;
+    imgproc::box_filter(
+        &ones,
+        &mut counts,
+        CV_32S,
+        Size::new(3, 3),
+        Point::new(-1, -1),
+        false,
+        core::BORDER_CONSTANT,
+    )?;
     let sums_v = mat_i32(&sums)?;
     let counts_v = mat_i32(&counts)?;
-    let blurred_bytes: Vec<u8> = sums_v.iter().zip(&counts_v).map(|(s, c)| (s / c) as u8).collect();
+    let blurred_bytes: Vec<u8> = sums_v
+        .iter()
+        .zip(&counts_v)
+        .map(|(s, c)| (s / c) as u8)
+        .collect();
     let blurred = Mat::new_rows_cols_with_data(h, w, &blurred_bytes)?.try_clone()?;
 
     let mut gx = Mat::default();
     let mut gy = Mat::default();
-    imgproc::scharr(&blurred, &mut gx, CV_16S, 1, 0, 1.0, 0.0, core::BORDER_DEFAULT)?;
-    imgproc::scharr(&blurred, &mut gy, CV_16S, 0, 1, 1.0, 0.0, core::BORDER_DEFAULT)?;
+    imgproc::scharr(
+        &blurred,
+        &mut gx,
+        CV_16S,
+        1,
+        0,
+        1.0,
+        0.0,
+        core::BORDER_DEFAULT,
+    )?;
+    imgproc::scharr(
+        &blurred,
+        &mut gy,
+        CV_16S,
+        0,
+        1,
+        1.0,
+        0.0,
+        core::BORDER_DEFAULT,
+    )?;
     let gx_v = gx.data_typed::<i16>()?;
     let gy_v = gy.data_typed::<i16>()?;
-    let mut mag: Vec<i32> = gx_v.iter().zip(gy_v).map(|(a, b)| (*a as i32).abs() + (*b as i32).abs()).collect();
+    let mut mag: Vec<i32> = gx_v
+        .iter()
+        .zip(gy_v)
+        .map(|(a, b)| (*a as i32).abs() + (*b as i32).abs())
+        .collect();
     let (wu, hu) = (w as usize, h as usize);
     for x in 0..wu {
         mag[x] = 0;
@@ -251,27 +358,58 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
     };
     let normalized = Mat::new_rows_cols_with_data(h, w, &normalized_bytes)?.try_clone()?;
     let mut otsu_dst = Mat::default();
-    let otsu = imgproc::threshold(&normalized, &mut otsu_dst, 0.0, 255.0, imgproc::THRESH_BINARY | imgproc::THRESH_OTSU)?;
+    let otsu = imgproc::threshold(
+        &normalized,
+        &mut otsu_dst,
+        0.0,
+        255.0,
+        imgproc::THRESH_BINARY | imgproc::THRESH_OTSU,
+    )?;
     let bias = match options.strictness {
         Strictness::Loose => -12.0,
         Strictness::Normal => 0.0,
         Strictness::Tight => 14.0,
     };
     let cut = (otsu + bias).min(250.0).max(4.0);
-    let binary_bytes: Vec<u8> = normalized_bytes.iter().map(|&v| u8::from(v as f64 > cut)).collect();
+    let binary_bytes: Vec<u8> = normalized_bytes
+        .iter()
+        .map(|&v| u8::from(v as f64 > cut))
+        .collect();
     let binary0 = Mat::new_rows_cols_with_data(h, w, &binary_bytes)?.try_clone()?;
     let kernel = Mat::new_rows_cols_with_default(3, 3, CV_8U, Scalar::all(1.0))?;
     let mut dilated = Mat::default();
     let mut binary = Mat::default();
-    imgproc::dilate(&binary0, &mut dilated, &kernel, Point::new(-1, -1), 1, core::BORDER_CONSTANT, Scalar::all(0.0))?;
-    imgproc::erode(&dilated, &mut binary, &kernel, Point::new(-1, -1), 1, core::BORDER_CONSTANT, Scalar::all(0.0))?;
+    imgproc::dilate(
+        &binary0,
+        &mut dilated,
+        &kernel,
+        Point::new(-1, -1),
+        1,
+        core::BORDER_CONSTANT,
+        Scalar::all(0.0),
+    )?;
+    imgproc::erode(
+        &dilated,
+        &mut binary,
+        &kernel,
+        Point::new(-1, -1),
+        1,
+        core::BORDER_CONSTANT,
+        Scalar::all(0.0),
+    )?;
     let binary_v: Vec<u8> = binary.data_bytes()?.to_vec();
 
     let mut labels = Mat::default();
     let mut stats = Mat::default();
     let mut centroids = Mat::default();
     imgproc::connected_components_with_stats_with_algorithm(
-        &binary, &mut labels, &mut stats, &mut centroids, 8, CV_32S, imgproc::CCL_SAUF,
+        &binary,
+        &mut labels,
+        &mut stats,
+        &mut centroids,
+        8,
+        CV_32S,
+        imgproc::CCL_SAUF,
     )?;
     let stats_v = mat_i32(&stats)?;
     let min_area = 12f64.max((min_side / downsample as f64).powi(2) * 0.35);
@@ -285,7 +423,11 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
 
     let fit = |c: &Component, kind: CandidateKind| -> Option<Candidate> {
         let (bw, bh) = ((c.x1 - c.x0 + 1) as f64, (c.y1 - c.y0 + 1) as f64);
-        if !((c.x0 as f64) <= click_x && click_x <= c.x1 as f64 && (c.y0 as f64) <= click_y && click_y <= c.y1 as f64) {
+        if !((c.x0 as f64) <= click_x
+            && click_x <= c.x1 as f64
+            && (c.y0 as f64) <= click_y
+            && click_y <= c.y1 as f64)
+        {
             return None;
         }
         if bw < min_side / ds || bh < min_side / ds {
@@ -333,13 +475,23 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
     for row in stats_v.chunks_exact(5).skip(1) {
         let (x, y, bw, bh, area) = (row[0], row[1], row[2], row[3], row[4]);
         if area as f64 >= min_area {
-            let component = Component { x0: x, y0: y, x1: x + bw - 1, y1: y + bh - 1, area };
+            let component = Component {
+                x0: x,
+                y0: y,
+                x1: x + bw - 1,
+                y1: y + bh - 1,
+                area,
+            };
             if let Some(hit) = fit(&component, CandidateKind::Contour) {
                 contour_hits.push(hit);
             }
         }
     }
-    contour_hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    contour_hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     contour_hits.truncate(2);
     let have_contours = !contour_hits.is_empty();
     candidates.extend(contour_hits);
@@ -351,9 +503,19 @@ pub fn detect_candidates(bgr: &Mat, click: (f64, f64), options: &DetectOptions) 
             Strictness::Tight => 10,
         };
         let max_pixels = js_round((max_side / ds).powi(2)) as i32;
-        if let Some(region) = flood_region(&rgb, js_round(click_x) as i32, js_round(click_y) as i32, tolerance, max_pixels)? {
+        if let Some(region) = flood_region(
+            &rgb,
+            js_round(click_x) as i32,
+            js_round(click_y) as i32,
+            tolerance,
+            max_pixels,
+        )? {
             if let Some(color) = fit(&region, CandidateKind::Color) {
-                candidates.push(Candidate { kind: CandidateKind::Color, score: (color.score * 0.8).min(0.7), ..color });
+                candidates.push(Candidate {
+                    kind: CandidateKind::Color,
+                    score: (color.score * 0.8).min(0.7),
+                    ..color
+                });
             }
         }
     }
@@ -377,10 +539,32 @@ mod tests {
     use opencv::imgproc::{rectangle, LINE_8};
 
     fn scene() -> Mat {
-        let mut image = Mat::new_rows_cols_with_default(400, 600, core::CV_8UC3, Scalar::new(40.0, 44.0, 48.0, 0.0)).unwrap();
+        let mut image = Mat::new_rows_cols_with_default(
+            400,
+            600,
+            core::CV_8UC3,
+            Scalar::new(40.0, 44.0, 48.0, 0.0),
+        )
+        .unwrap();
         let rect = core::Rect::new(240, 180, 120, 56);
-        rectangle(&mut image, rect, Scalar::new(196.0, 120.0, 60.0, 0.0), -1, LINE_8, 0).unwrap();
-        rectangle(&mut image, rect, Scalar::new(250.0, 240.0, 220.0, 0.0), 3, LINE_8, 0).unwrap();
+        rectangle(
+            &mut image,
+            rect,
+            Scalar::new(196.0, 120.0, 60.0, 0.0),
+            -1,
+            LINE_8,
+            0,
+        )
+        .unwrap();
+        rectangle(
+            &mut image,
+            rect,
+            Scalar::new(250.0, 240.0, 220.0, 0.0),
+            3,
+            LINE_8,
+            0,
+        )
+        .unwrap();
         // Texture inside the button so the variance gate passes.
         for i in 0..20 {
             let x = 255 + i * 4;
@@ -394,7 +578,9 @@ mod tests {
     fn finds_the_button_under_the_click() {
         let found = detect_candidates(&scene(), (300.0, 208.0), &DetectOptions::default()).unwrap();
         assert!(!found.is_empty());
-        let best = found.iter().find(|c| matches!(c.kind, CandidateKind::Contour | CandidateKind::Color));
+        let best = found
+            .iter()
+            .find(|c| matches!(c.kind, CandidateKind::Contour | CandidateKind::Color));
         let best = best.expect("a contour or colour candidate");
         assert!(best.x <= 245.0 && best.x + best.w >= 355.0, "{best:?}");
         assert!(best.y <= 185.0 && best.y + best.h >= 230.0, "{best:?}");
@@ -402,7 +588,8 @@ mod tests {
 
     #[test]
     fn fallback_is_proposed_on_an_empty_surface() {
-        let blank = Mat::new_rows_cols_with_default(300, 300, core::CV_8UC3, Scalar::all(30.0)).unwrap();
+        let blank =
+            Mat::new_rows_cols_with_default(300, 300, core::CV_8UC3, Scalar::all(30.0)).unwrap();
         let found = detect_candidates(&blank, (150.0, 150.0), &DetectOptions::default()).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].kind, CandidateKind::Fallback);
@@ -410,15 +597,27 @@ mod tests {
 
     #[test]
     fn ax_box_comes_first_and_is_exact() {
-        let options = DetectOptions { ax_box: Some(PixelBox { x: 10.0, y: 20.0, w: 80.0, h: 40.0 }), ..Default::default() };
+        let options = DetectOptions {
+            ax_box: Some(PixelBox {
+                x: 10.0,
+                y: 20.0,
+                w: 80.0,
+                h: 40.0,
+            }),
+            ..Default::default()
+        };
         let found = detect_candidates(&scene(), (50.0, 40.0), &options).unwrap();
         assert_eq!(found[0].kind, CandidateKind::Ax);
-        assert_eq!((found[0].x, found[0].y, found[0].w, found[0].h), (10.0, 20.0, 80.0, 40.0));
+        assert_eq!(
+            (found[0].x, found[0].y, found[0].w, found[0].h),
+            (10.0, 20.0, 80.0, 40.0)
+        );
     }
 
     #[test]
     fn rejects_non_bgr_input() {
-        let gray = Mat::new_rows_cols_with_default(10, 10, core::CV_8UC1, Scalar::all(0.0)).unwrap();
+        let gray =
+            Mat::new_rows_cols_with_default(10, 10, core::CV_8UC1, Scalar::all(0.0)).unwrap();
         assert!(detect_candidates(&gray, (5.0, 5.0), &DetectOptions::default()).is_err());
     }
 }

@@ -1,8 +1,8 @@
 //! The only place the desktop app knows which OS it runs on.
 
-use serde::{Deserialize, Serialize};
 use liverguard_engine::Driver;
 use liverguard_ir::{Bounds, Rect};
+use serde::{Deserialize, Serialize};
 
 /// What a script drives: the whole display or a single window.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
@@ -41,7 +41,10 @@ mod imp {
     pub fn make_driver(surface: Surface) -> Box<dyn Driver> {
         let selector = match surface {
             Surface::FullScreen => SurfaceSelector::FullScreen,
-            Surface::Window { number } => SurfaceSelector::Window { number: u32::try_from(number).ok(), query: None },
+            Surface::Window { number } => SurfaceSelector::Window {
+                number: u32::try_from(number).ok(),
+                query: None,
+            },
         };
         Box::new(MacDriver::new(selector))
     }
@@ -94,7 +97,10 @@ mod imp {
     pub fn make_driver(surface: Surface) -> Box<dyn Driver> {
         let selector = match surface {
             Surface::FullScreen => SurfaceSelector::FullScreen,
-            Surface::Window { number } => SurfaceSelector::Window { number: Some(number as isize), query: None },
+            Surface::Window { number } => SurfaceSelector::Window {
+                number: Some(number as isize),
+                query: None,
+            },
         };
         Box::new(WinDriver::new(selector))
     }
@@ -158,7 +164,9 @@ mod imp {
             accessibility: false,
             screen_recording: false,
             owner: String::new(),
-            problems: vec!["this platform is not supported yet (macOS and Windows only)".to_string()],
+            problems: vec![
+                "this platform is not supported yet (macOS and Windows only)".to_string(),
+            ],
             ok: false,
         }
     }
@@ -172,7 +180,10 @@ mod imp {
     pub fn prepare_process() {}
 }
 
-pub use imp::{list_windows, make_driver, open_permission_settings, permissions, prepare_process, request_permissions};
+pub use imp::{
+    list_windows, make_driver, open_permission_settings, permissions, prepare_process,
+    request_permissions,
+};
 
 /// Logical point of a pixel in a frame.
 pub fn pixel_to_global(bounds: &Bounds, px: f64, py: f64) -> (f64, f64) {

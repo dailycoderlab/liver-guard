@@ -137,8 +137,16 @@ pub fn global_to_normalized(px: f64, py: f64, bounds: &Bounds) -> (f64, f64) {
 /// rather than a centre point keeps a click on the left third of a long button
 /// on the left third after the screen gets bigger.
 pub fn anchor_in_box(click: (f64, f64), rect: &Rect) -> (f64, f64) {
-    let ax = if rect.w > 0.0 { (click.0 - rect.x) / rect.w } else { 0.5 };
-    let ay = if rect.h > 0.0 { (click.1 - rect.y) / rect.h } else { 0.5 };
+    let ax = if rect.w > 0.0 {
+        (click.0 - rect.x) / rect.w
+    } else {
+        0.5
+    };
+    let ay = if rect.h > 0.0 {
+        (click.1 - rect.y) / rect.h
+    } else {
+        0.5
+    };
     (clamp(ax, 0.1, 0.9), clamp(ay, 0.1, 0.9))
 }
 
@@ -253,7 +261,10 @@ mod tests {
     fn roi_to_pixels_never_collapses() {
         let (x, y, w, h) = roi_to_pixels(&[0.99, 0.99, 0.5, 0.5], 480, 320);
         assert!(x < 480 && y < 320 && w >= 1 && h >= 1);
-        assert_eq!(roi_to_pixels(&[0.0, 0.0, 1.0, 1.0], 480, 320), (0, 0, 480, 320));
+        assert_eq!(
+            roi_to_pixels(&[0.0, 0.0, 1.0, 1.0], 480, 320),
+            (0, 0, 480, 320)
+        );
     }
 
     #[test]

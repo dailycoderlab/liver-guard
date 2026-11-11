@@ -52,11 +52,19 @@ pub struct RunError {
 
 impl RunError {
     pub fn new(reason: Reason, message: impl Into<String>) -> Self {
-        Self { reason, message: message.into(), node_id: None }
+        Self {
+            reason,
+            message: message.into(),
+            node_id: None,
+        }
     }
 
     pub fn at(reason: Reason, message: impl Into<String>, node_id: &str) -> Self {
-        Self { reason, message: message.into(), node_id: Some(node_id.to_string()) }
+        Self {
+            reason,
+            message: message.into(),
+            node_id: Some(node_id.to_string()),
+        }
     }
 
     pub fn stopped() -> Self {

@@ -1,0 +1,157 @@
+# Checks for pull requests and for main: formatting, web typecheck and tests, and Rust
+# clippy + tests on the two platforms the installers are built for.
+#
+# The OpenCV and libclang setup, and the Windows linker workarounds, are copied from
+# release.yml (job `build`). Keep the two in sync; the OpenCV cache key is the same on
+# purpose, so a CI run and a release share one OpenCV build.
+#
+# Caches written by a pull request are only readable by that pull request; runs on main
+# write the caches that every PR reads. The first run after a change to build-opencv.sh
+# compiles OpenCV from source and takes a long time.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Rust format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  web:
+    name: Web checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/web/pnpm-lock.yaml
+
+      - name: Install, typecheck, test
+        working-directory: apps/desktop/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
+      - name: Update manifest script tests
+        run: node --test scripts/ci/*.test.mjs
+
+  rust:
+    name: Rust ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-26 # same image and reason as release.yml
+          - name: windows-x64
+            os: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/web/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-${{ matrix.name }}
+          cache-on-failure: true
+
+      # The opencv crate generates its bindings with libclang.
+      - name: Locate libclang (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          dir="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          [ -f "$dir/libclang.dylib" ] || dir=/Library/Developer/CommandLineTools/usr/lib
+          echo "LIBCLANG_PATH=$dir" >> "$GITHUB_ENV"
+      - name: Locate libclang (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'LIBCLANG_PATH=C:\Program Files\LLVM\bin' >> "$GITHUB_ENV"
+
+      - uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+
+      # Git Bash's /usr/bin/link shadows MSVC's link.exe (see release.yml).
+      - name: Remove Git's link.exe (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f /usr/bin/link.exe
+
+      - name: Cache OpenCV
+        uses: actions/cache@v6
+        with:
+          path: .opencv-prefix
+          key: opencv-${{ matrix.name }}-${{ hashFiles('scripts/ci/build-opencv.sh') }}
+
+      - name: Build OpenCV (minimal, static)
+        shell: bash
+        run: scripts/ci/build-opencv.sh "$PWD/.opencv-prefix"
+
+      # The Tauri crate embeds apps/desktop/web/dist at compile time (generate_context!).
+      - name: Build the web app
+        working-directory: apps/desktop/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      # Same flags for clippy and test so the two share compiled dependencies.
+      - name: Clippy and tests
+        shell: bash
+        run: |
+          cargo_cfg=()
+          if [ "$RUNNER_OS" = Windows ]; then
+            # See release.yml: the static OpenCV lists system import libraries as native
+            # libraries that rustc resolves only through -L paths, not through LIB.
+            um=""
+            IFS=';' read -ra lib_dirs <<<"$LIB"
+            for d in "${lib_dirs[@]}"; do
+              if [ -f "$d/kernel32.lib" ]; then um="$(cygpath -m "$d")"; break; fi
+            done
+            [ -n "$um" ] || { echo "kernel32.lib not found in LIB=$LIB" >&2; exit 1; }
+            echo "Windows SDK libraries: $um"
+            cargo_cfg=(--config "build.rustflags=['-L','native=$um']")
+          fi
+          # Warnings are shown but do not fail the run: the workspace has ~12 existing ones that
+          # nobody has decided to fix yet. Add `-- -D warnings` once they are gone.
+          cargo clippy "${cargo_cfg[@]}" --workspace --all-targets
+          cargo test "${cargo_cfg[@]}" --workspace --all-targets

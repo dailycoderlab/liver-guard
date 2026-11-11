@@ -58,7 +58,8 @@ fn source() -> Result<CGEventSource> {
 }
 
 fn mouse(kind: CGEventType, x: f64, y: f64) -> Result<CGEvent> {
-    CGEvent::new_mouse_event(source()?, kind, CGPoint::new(x, y), CGMouseButton::Left).map_err(|_| InputError::Event)
+    CGEvent::new_mouse_event(source()?, kind, CGPoint::new(x, y), CGMouseButton::Left)
+        .map_err(|_| InputError::Event)
 }
 
 fn post_mouse(kind: CGEventType, x: f64, y: f64) -> Result<()> {
@@ -105,7 +106,11 @@ pub fn swipe(x1: f64, y1: f64, x2: f64, y2: f64, duration_ms: u32) -> Result<()>
     let step_delay = ((duration_ms.max(50) as f64 / 1000.0) / STEPS as f64).max(0.004);
     for index in 1..=STEPS {
         let ratio = index as f64 / STEPS as f64;
-        post_mouse(CGEventType::LeftMouseDragged, x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio)?;
+        post_mouse(
+            CGEventType::LeftMouseDragged,
+            x1 + (x2 - x1) * ratio,
+            y1 + (y2 - y1) * ratio,
+        )?;
         sleep(Duration::from_secs_f64(step_delay));
     }
     post_mouse(CGEventType::LeftMouseUp, x2, y2)
@@ -135,7 +140,8 @@ pub fn text(value: &str) -> Result<()> {
     for ch in value.chars() {
         let s: &str = ch.encode_utf8(&mut buffer);
         for pressed in [true, false] {
-            let event = CGEvent::new_keyboard_event(source()?, 0, pressed).map_err(|_| InputError::Event)?;
+            let event = CGEvent::new_keyboard_event(source()?, 0, pressed)
+                .map_err(|_| InputError::Event)?;
             event.set_string(s);
             event.post(CGEventTapLocation::HID);
         }
@@ -158,6 +164,9 @@ mod tests {
 
     #[test]
     fn unknown_multi_character_keys_are_rejected_before_any_event() {
-        assert!(matches!(key("ctrl+alt+del"), Err(InputError::UnknownKey(_))));
+        assert!(matches!(
+            key("ctrl+alt+del"),
+            Err(InputError::UnknownKey(_))
+        ));
     }
 }

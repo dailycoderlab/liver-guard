@@ -7,8 +7,12 @@
 # Run it once by hand on main first: caches written by a tag run can only be read by that
 # tag, while tag runs can read caches written on main.
 #
-# Not signed: there is no Apple Developer ID or Windows certificate behind this. See
+# Not code-signed: there is no Apple Developer ID or Windows certificate behind this. See
 # README "持续集成与发布" for what to add when there is.
+#
+# The installers also produce the updater packages and `latest.json` that the in-app update
+# reads. Those are signed with the Actions secret TAURI_SIGNING_PRIVATE_KEY (README "应用内更新");
+# a run without that secret fails in the first job.
 
 name: Release
 
@@ -45,6 +49,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/desktop/web/pnpm-lock.yaml
 
+      # The updater packages cannot be built without the signing key; fail now, not after the
+      # twenty minutes of macOS and Windows builds.
+      - name: Updater signing key is configured
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "The Actions secret TAURI_SIGNING_PRIVATE_KEY is not set (README \"应用内更新\")." >&2
+            exit 1
+          fi
+
       - name: Tag matches the version in the project
         if: startsWith(github.ref, 'refs/tags/v')
         run: node scripts/ci/check-version.mjs "$GITHUB_REF_NAME"
@@ -72,12 +87,19 @@ jobs:
             # Pinned rather than macos-latest so the toolchain does not change under a release;
             # the deployment target stays macOS 14.
             os: macos-26
-            bundles: dmg
-            installers: target/release/bundle/dmg/*.dmg
+            bundles: app,dmg
+            # The installer, then the updater package (.app.tar.gz) with its signature.
+            installers: |
+              target/release/bundle/dmg/*.dmg
+              target/release/bundle/macos/*.app.tar.gz
+              target/release/bundle/macos/*.app.tar.gz.sig
           - name: windows-x64
             os: windows-2022
             bundles: nsis
-            installers: target/release/bundle/nsis/*.exe
+            # The NSIS installer is also the updater package; its signature sits next to it.
+            installers: |
+              target/release/bundle/nsis/*-setup.exe
+              target/release/bundle/nsis/*-setup.exe.sig
     steps:
       - uses: actions/checkout@v7
 
@@ -145,6 +167,9 @@ jobs:
         env:
           # No Developer ID: seal the .app with an ad-hoc signature (macOS only; ignored elsewhere).
           APPLE_SIGNING_IDENTITY: '-'
+          # Signs the updater packages (not the installers). The key has no password.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: |
           cargo_args=()
           if [ "$RUNNER_OS" = Windows ]; then
@@ -164,12 +189,31 @@ jobs:
           fi
           # Tauri downloads NSIS from github.com at bundle time; if that returns a 504, use
           # "Re-run failed jobs" (the Rust and OpenCV caches make the retry quick).
-          ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }} "${cargo_args[@]}"
+          # createUpdaterArtifacts is switched on here, not in tauri.conf.json: a local
+          # `tauri build` (scripts/mac-dev-build.sh) has no signing key and would fail with it.
+          ./web/node_modules/.bin/tauri build --bundles ${{ matrix.bundles }} \
+            --config '{"bundle":{"createUpdaterArtifacts":true}}' "${cargo_args[@]}"
+
+      # One flat folder, so the release job gets plain file names whatever directories
+      # the bundles were written to. A pattern that matches nothing fails the build.
+      - name: Collect release files
+        shell: bash
+        env:
+          PATTERNS: ${{ matrix.installers }}
+        run: |
+          mkdir staging
+          while IFS= read -r pattern; do
+            [ -n "$pattern" ] || continue
+            files=($pattern)
+            [ -e "${files[0]}" ] || { echo "No file matches $pattern" >&2; exit 1; }
+            cp "${files[@]}" staging/
+          done <<< "$PATTERNS"
+          ls -l staging
 
       - uses: actions/upload-artifact@v7
         with:
           name: liverguard-${{ matrix.name }}
-          path: ${{ matrix.installers }}
+          path: staging/*
           if-no-files-found: error
           retention-days: 14
 
@@ -188,6 +232,18 @@ jobs:
           pattern: liverguard-*
           path: dist
           merge-multiple: true
+
+      # What the in-app update fetches from /releases/latest/download/latest.json once the
+      # draft is published. Fails if either platform lacks a signed package.
+      - name: Update manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/ci/generate-update-manifest.mjs \
+            --version "${TAG#v}" --tag "$TAG" --repository "$REPOSITORY" \
+            --assets-dir dist --output dist/latest.json
+          cat dist/latest.json
 
       - name: Checksums
         working-directory: dist

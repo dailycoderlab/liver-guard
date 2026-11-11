@@ -8,15 +8,15 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use opencv::core::{Mat, MatTraitConst, Vector};
-use opencv::imgcodecs;
-use serde::Deserialize;
 use liverguard_ir::geometry::{self, Bounds, Rect};
 use liverguard_ir::{ScaleSpec, Target};
 use liverguard_vision::normalize::template_factor;
 use liverguard_vision::tpl::scale_ladder;
 use liverguard_vision::verify::color_similarity;
 use liverguard_vision::{AssetStore, Frame, MatcherEngine};
+use opencv::core::{Mat, MatTraitConst, Vector};
+use opencv::imgcodecs;
+use serde::Deserialize;
 
 const SCORE_TOLERANCE: f64 = 0.01;
 const POINT_TOLERANCE: f64 = 1.0;
@@ -126,7 +126,8 @@ fn manifest() -> Manifest {
 
 fn read_image(path: &Path) -> Mat {
     let bytes = fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let image = imgcodecs::imdecode(&Vector::<u8>::from_slice(&bytes), imgcodecs::IMREAD_COLOR).unwrap();
+    let image =
+        imgcodecs::imdecode(&Vector::<u8>::from_slice(&bytes), imgcodecs::IMREAD_COLOR).unwrap();
     assert!(!image.empty(), "{} did not decode", path.display());
     image
 }
@@ -146,7 +147,10 @@ fn engine(manifest: &Manifest) -> MatcherEngine {
 }
 
 fn assert_close(label: &str, actual: f64, expected: f64, tolerance: f64) {
-    assert!((actual - expected).abs() <= tolerance, "{label}: got {actual}, expected {expected} (tolerance {tolerance})");
+    assert!(
+        (actual - expected).abs() <= tolerance,
+        "{label}: got {actual}, expected {expected} (tolerance {tolerance})"
+    );
 }
 
 #[test]
@@ -164,21 +168,58 @@ fn template_cases_match_the_reference() {
     for case in &manifest.cases {
         let frame = load_frame(&manifest, &case.frame);
         let mut engine = engine(&manifest);
-        let hit = engine.resolve(&case.target, "btn", &frame, (case.offset[0], case.offset[1])).unwrap();
+        let hit = engine
+            .resolve(
+                &case.target,
+                "btn",
+                &frame,
+                (case.offset[0], case.offset[1]),
+            )
+            .unwrap();
 
         match (&case.expected, hit) {
             (None, None) => {}
             (Some(expected), Some(hit)) => {
                 let name = &case.name;
-                assert_close(&format!("{name} score"), hit.score, expected.score, SCORE_TOLERANCE);
-                assert_close(&format!("{name} x"), hit.point.0, expected.point[0], POINT_TOLERANCE);
-                assert_close(&format!("{name} y"), hit.point.1, expected.point[1], POINT_TOLERANCE);
-                assert_close(&format!("{name} box.w"), hit.rect.w, expected.rect[2], POINT_TOLERANCE);
-                assert_close(&format!("{name} box.h"), hit.rect.h, expected.rect[3], POINT_TOLERANCE);
+                assert_close(
+                    &format!("{name} score"),
+                    hit.score,
+                    expected.score,
+                    SCORE_TOLERANCE,
+                );
+                assert_close(
+                    &format!("{name} x"),
+                    hit.point.0,
+                    expected.point[0],
+                    POINT_TOLERANCE,
+                );
+                assert_close(
+                    &format!("{name} y"),
+                    hit.point.1,
+                    expected.point[1],
+                    POINT_TOLERANCE,
+                );
+                assert_close(
+                    &format!("{name} box.w"),
+                    hit.rect.w,
+                    expected.rect[2],
+                    POINT_TOLERANCE,
+                );
+                assert_close(
+                    &format!("{name} box.h"),
+                    hit.rect.h,
+                    expected.rect[3],
+                    POINT_TOLERANCE,
+                );
                 assert_eq!(hit.strategy, expected.strategy, "{name} strategy");
                 assert_eq!(hit.warnings, expected.warnings, "{name} warnings");
             }
-            (expected, hit) => panic!("{}: expected {:?}, got {:?}", case.name, expected.is_some(), hit.map(|h| h.score)),
+            (expected, hit) => panic!(
+                "{}: expected {:?}, got {:?}",
+                case.name,
+                expected.is_some(),
+                hit.map(|h| h.score)
+            ),
         }
     }
 }
@@ -189,12 +230,24 @@ fn point_targets_match_the_reference() {
     for case in &manifest.point_cases {
         let frame = load_frame(&manifest, &case.frame);
         let mut engine = engine(&manifest);
-        let hit = engine.resolve(&case.target, "p", &frame, (0.0, 0.0)).unwrap();
+        let hit = engine
+            .resolve(&case.target, "p", &frame, (0.0, 0.0))
+            .unwrap();
         match (&case.expected, hit) {
             (None, None) => {}
             (Some(expected), Some(hit)) => {
-                assert_close(&format!("{} x", case.name), hit.point.0, expected.point[0], 1e-6);
-                assert_close(&format!("{} y", case.name), hit.point.1, expected.point[1], 1e-6);
+                assert_close(
+                    &format!("{} x", case.name),
+                    hit.point.0,
+                    expected.point[0],
+                    1e-6,
+                );
+                assert_close(
+                    &format!("{} y", case.name),
+                    hit.point.1,
+                    expected.point[1],
+                    1e-6,
+                );
                 assert_eq!(hit.strategy, expected.strategy);
                 assert_eq!(hit.warnings, expected.warnings);
             }
@@ -208,8 +261,14 @@ fn color_similarity_matches_the_reference() {
     let manifest = manifest();
     for item in &manifest.units.similarity {
         let patch = read_image(&golden_dir().join(format!("patches/{}_patch.png", item.name)));
-        let template = read_image(&golden_dir().join(format!("patches/{}_template.png", item.name)));
-        assert_close(&format!("similarity {}", item.name), color_similarity(&patch, &template), item.value, 1e-3);
+        let template =
+            read_image(&golden_dir().join(format!("patches/{}_template.png", item.name)));
+        assert_close(
+            &format!("similarity {}", item.name),
+            color_similarity(&patch, &template),
+            item.value,
+            1e-3,
+        );
     }
 }
 
@@ -219,7 +278,12 @@ fn geometry_helpers_match_the_reference() {
 
     for item in &manifest.units.scale_ladder {
         let values = scale_ladder(&item.spec);
-        assert_eq!(values.len(), item.values.len(), "ladder length for {:?}", item.spec);
+        assert_eq!(
+            values.len(),
+            item.values.len(),
+            "ladder length for {:?}",
+            item.spec
+        );
         for (a, b) in values.iter().zip(&item.values) {
             assert_close("ladder", *a, *b, 1e-9);
         }
@@ -232,12 +296,23 @@ fn geometry_helpers_match_the_reference() {
 
     for item in &manifest.units.roi_to_pixels {
         let value = geometry::roi_to_pixels(&item.roi, item.size[0], item.size[1]);
-        assert_eq!([value.0, value.1, value.2, value.3], item.value, "roi {:?}", item.roi);
+        assert_eq!(
+            [value.0, value.1, value.2, value.3],
+            item.value,
+            "roi {:?}",
+            item.roi
+        );
     }
 
     for item in &manifest.units.infer_roi {
         let rect = Rect::new(item.rect[0], item.rect[1], item.rect[2], item.rect[3]);
-        let bounds = Bounds::new(item.bounds[0], item.bounds[1], item.bounds[2], item.bounds[3], 2.0);
+        let bounds = Bounds::new(
+            item.bounds[0],
+            item.bounds[1],
+            item.bounds[2],
+            item.bounds[3],
+            2.0,
+        );
         let value = geometry::infer_roi(&rect, &bounds, 3, 5);
         for (a, b) in value.iter().zip(&item.value) {
             assert_close("infer_roi", *a, *b, 1e-9);

@@ -62,7 +62,12 @@ impl Default for Capturer {
 
 impl Capturer {
     pub fn new() -> Self {
-        Self { handles: Handles { display: None, windows: HashMap::new() } }
+        Self {
+            handles: Handles {
+                display: None,
+                windows: HashMap::new(),
+            },
+        }
     }
 
     /// Drop cached handles, e.g. after a display configuration change.
@@ -86,11 +91,18 @@ impl Capturer {
         let filter = match target {
             Target::MainDisplay => {
                 let display = self.display()?;
-                SCContentFilter::create().with_display(&display).with_excluding_windows(&[]).build().map_err(failed)?
+                SCContentFilter::create()
+                    .with_display(&display)
+                    .with_excluding_windows(&[])
+                    .build()
+                    .map_err(failed)?
             }
             Target::Window(id) => {
                 let window = self.window(id)?;
-                SCContentFilter::create().with_window(&window).build().map_err(failed)?
+                SCContentFilter::create()
+                    .with_window(&window)
+                    .build()
+                    .map_err(failed)?
             }
         };
 
@@ -100,11 +112,16 @@ impl Capturer {
             return Err(CaptureError::Missing);
         }
 
-        let mut config = SCStreamConfiguration::new().with_width(width).with_height(height).with_shows_cursor(false);
+        let mut config = SCStreamConfiguration::new()
+            .with_width(width)
+            .with_height(height)
+            .with_shows_cursor(false);
         if matches!(target, Target::Window(_)) {
             // Without this the image grows by the window's drop shadow and no
             // longer matches the window frame the coordinates are based on.
-            config = config.with_ignores_shadows_single_window(true).map_err(failed)?;
+            config = config
+                .with_ignores_shadows_single_window(true)
+                .map_err(failed)?;
         }
 
         let image = SCScreenshotManager::capture_image(&filter, &config).map_err(failed)?;
@@ -113,7 +130,11 @@ impl Capturer {
         if w == 0 || h == 0 || bgra.len() < (w as usize) * (h as usize) * 4 {
             return Err(CaptureError::Failed("截图数据不完整".into()));
         }
-        Ok(RawImage { width: w, height: h, bgra })
+        Ok(RawImage {
+            width: w,
+            height: h,
+            bgra,
+        })
     }
 
     fn display(&mut self) -> Result<SCDisplay> {
@@ -138,8 +159,15 @@ impl Capturer {
             return Ok(window.clone());
         }
         // Off-screen windows (other Spaces, minimized) cannot be captured.
-        let content = SCShareableContent::create().with_on_screen_windows_only(true).get().map_err(failed)?;
-        let window = content.windows().into_iter().find(|w| w.window_id() == id).ok_or(CaptureError::Missing)?;
+        let content = SCShareableContent::create()
+            .with_on_screen_windows_only(true)
+            .get()
+            .map_err(failed)?;
+        let window = content
+            .windows()
+            .into_iter()
+            .find(|w| w.window_id() == id)
+            .ok_or(CaptureError::Missing)?;
         self.handles.windows.insert(id, window.clone());
         Ok(window)
     }

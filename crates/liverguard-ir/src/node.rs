@@ -39,18 +39,28 @@ pub enum CompareOp {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Condition {
     /// True when any listed target is on screen.
-    Visible { targets: Vec<String> },
+    Visible {
+        targets: Vec<String>,
+    },
     /// True when the target is not on screen.
-    Missing { target: String },
+    Missing {
+        target: String,
+    },
     Var {
         name: String,
         #[serde(default)]
         op: CompareOp,
         value: VarValue,
     },
-    Not { cond: Box<Condition> },
-    All { conds: Vec<Condition> },
-    Any { conds: Vec<Condition> },
+    Not {
+        cond: Box<Condition>,
+    },
+    All {
+        conds: Vec<Condition>,
+    },
+    Any {
+        conds: Vec<Condition>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -312,7 +322,11 @@ impl NodeKind {
             NodeKind::Loop(_) => vec![BODY, DONE],
             NodeKind::Retry(_) => vec![BODY, DONE, FAILED],
             NodeKind::Switch(data) => {
-                let mut handles: Vec<String> = data.cases.iter().map(|c| format!("{CASE_PREFIX}{c}")).collect();
+                let mut handles: Vec<String> = data
+                    .cases
+                    .iter()
+                    .map(|c| format!("{CASE_PREFIX}{c}"))
+                    .collect();
                 handles.push(DEFAULT.to_string());
                 return handles;
             }

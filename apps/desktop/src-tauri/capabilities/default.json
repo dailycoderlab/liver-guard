@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Main window: custom commands plus window close handling",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-destroy", "core:window:allow-close"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-destroy",
+    "core:window:allow-close",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }

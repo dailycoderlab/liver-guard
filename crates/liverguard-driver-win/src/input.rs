@@ -8,12 +8,12 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use windows::Win32::Foundation::POINT;
-use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
-    MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK,
-    MOUSEINPUT, VIRTUAL_KEY,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
+    KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY,
 };
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::window::virtual_screen;
 
@@ -73,10 +73,17 @@ fn absolute(x: f64, y: f64) -> (i32, i32) {
     let screen = virtual_screen();
     let nx = (x - screen.x) * 65535.0 / (screen.w - 1.0).max(1.0);
     let ny = (y - screen.y) * 65535.0 / (screen.h - 1.0).max(1.0);
-    (nx.round().clamp(0.0, 65535.0) as i32, ny.round().clamp(0.0, 65535.0) as i32)
+    (
+        nx.round().clamp(0.0, 65535.0) as i32,
+        ny.round().clamp(0.0, 65535.0) as i32,
+    )
 }
 
-fn mouse(x: f64, y: f64, flags: windows::Win32::UI::Input::KeyboardAndMouse::MOUSE_EVENT_FLAGS) -> INPUT {
+fn mouse(
+    x: f64,
+    y: f64,
+    flags: windows::Win32::UI::Input::KeyboardAndMouse::MOUSE_EVENT_FLAGS,
+) -> INPUT {
     let (dx, dy) = absolute(x, y);
     INPUT {
         r#type: INPUT_MOUSE,
@@ -126,16 +133,32 @@ pub fn swipe(x1: f64, y1: f64, x2: f64, y2: f64, duration_ms: u32) -> Result<()>
     let step_delay = ((duration_ms.max(50) as f64 / 1000.0) / STEPS as f64).max(0.004);
     for index in 1..=STEPS {
         let ratio = index as f64 / STEPS as f64;
-        send(&[mouse(x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio, MOUSEEVENTF_MOVE)])?;
+        send(&[mouse(
+            x1 + (x2 - x1) * ratio,
+            y1 + (y2 - y1) * ratio,
+            MOUSEEVENTF_MOVE,
+        )])?;
         sleep(Duration::from_secs_f64(step_delay));
     }
     send(&[mouse(x2, y2, MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP)])
 }
 
-fn key_event(vk: u16, scan: u16, flags: windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS) -> INPUT {
+fn key_event(
+    vk: u16,
+    scan: u16,
+    flags: windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS,
+) -> INPUT {
     INPUT {
         r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VIRTUAL_KEY(vk), wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(vk),
+                wScan: scan,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
     }
 }
 

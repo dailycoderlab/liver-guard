@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use opencv::prelude::*;
+use liverguard_ir::geometry::py_round;
 use opencv::core::{Mat, Vector};
 use opencv::imgcodecs;
+use opencv::prelude::*;
 use sha2::{Digest, Sha256};
-use liverguard_ir::geometry::py_round;
 
 use crate::util::{resize_by, Result, VisionError};
 
@@ -25,11 +25,19 @@ pub struct AssetStore {
 
 impl AssetStore {
     pub fn in_memory() -> Self {
-        Self { dir: None, raw: HashMap::new(), resized: HashMap::new() }
+        Self {
+            dir: None,
+            raw: HashMap::new(),
+            resized: HashMap::new(),
+        }
     }
 
     pub fn with_dir(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: Some(dir.into()), raw: HashMap::new(), resized: HashMap::new() }
+        Self {
+            dir: Some(dir.into()),
+            raw: HashMap::new(),
+            resized: HashMap::new(),
+        }
     }
 
     pub fn hash_bytes(payload: &[u8]) -> String {
@@ -40,7 +48,10 @@ impl AssetStore {
         let buffer = Vector::<u8>::from_slice(payload);
         let image = imgcodecs::imdecode(&buffer, imgcodecs::IMREAD_COLOR)?;
         if image.empty() {
-            return Err(VisionError::Asset(format!("asset {} is not a decodable image", short(sha))));
+            return Err(VisionError::Asset(format!(
+                "asset {} is not a decodable image",
+                short(sha)
+            )));
         }
         self.raw.insert(sha.to_string(), Rc::new(image));
         Ok(())
@@ -66,12 +77,16 @@ impl AssetStore {
             if path.exists() {
                 // Decode through OpenCV's buffer API so non-ASCII paths work and
                 // pixels match what the matcher was calibrated on.
-                let bytes = std::fs::read(&path).map_err(|e| VisionError::Asset(format!("{}: {e}", path.display())))?;
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| VisionError::Asset(format!("{}: {e}", path.display())))?;
                 self.put_bytes(sha, &bytes)?;
                 return Ok(self.raw[sha].clone());
             }
         }
-        Err(VisionError::Asset(format!("asset {} is not in the local asset directory", short(sha))))
+        Err(VisionError::Asset(format!(
+            "asset {} is not in the local asset directory",
+            short(sha)
+        )))
     }
 
     pub fn get_scaled(&mut self, sha: &str, factor: f64) -> Result<Rc<Mat>> {

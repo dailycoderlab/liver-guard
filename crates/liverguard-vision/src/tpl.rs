@@ -1,10 +1,10 @@
 //! Template matching primitives: single scale, pyramid multi-scale, NMS.
 
-use opencv::prelude::*;
-use opencv::core::{self, no_array, Mat, MatTraitConst, MatTraitManual, Point, Scalar, CV_32F};
-use opencv::imgproc;
 use liverguard_ir::geometry::py_round;
 use liverguard_ir::{Mask, ScaleSpec};
+use opencv::core::{self, no_array, Mat, MatTraitConst, MatTraitManual, Point, Scalar, CV_32F};
+use opencv::imgproc;
+use opencv::prelude::*;
 
 use crate::util::{resize_by, std_dev, to_gray, Result};
 
@@ -53,7 +53,13 @@ pub fn match_at_scale(image: &Mat, template: &Mat) -> Result<Option<Mat>> {
         return Ok(None);
     }
     let mut result = Mat::default();
-    imgproc::match_template(image, template, &mut result, imgproc::TM_CCOEFF_NORMED, &no_array())?;
+    imgproc::match_template(
+        image,
+        template,
+        &mut result,
+        imgproc::TM_CCOEFF_NORMED,
+        &no_array(),
+    )?;
     debug_assert_eq!(result.typ(), CV_32F);
     for value in result.data_typed_mut::<f32>()? {
         if !value.is_finite() {
@@ -66,13 +72,26 @@ pub fn match_at_scale(image: &Mat, template: &Mat) -> Result<Option<Mat>> {
 fn max_loc(map: &Mat) -> Result<(f64, Point)> {
     let mut max_val = 0.0;
     let mut loc = Point::new(0, 0);
-    core::min_max_loc(map, None, Some(&mut max_val), None, Some(&mut loc), &no_array())?;
+    core::min_max_loc(
+        map,
+        None,
+        Some(&mut max_val),
+        None,
+        Some(&mut loc),
+        &no_array(),
+    )?;
     Ok((max_val, loc))
 }
 
 /// Non-maximum suppression by blacking out the neighbourhood of each hit: take
 /// the global max, record it, paint over that area, repeat.
-pub fn collect_peaks(result: &Mat, template_w: i32, template_h: i32, threshold: f64, limit: usize) -> Result<Vec<Match>> {
+pub fn collect_peaks(
+    result: &Mat,
+    template_w: i32,
+    template_h: i32,
+    threshold: f64,
+    limit: usize,
+) -> Result<Vec<Match>> {
     if result.empty() {
         return Ok(vec![]);
     }
@@ -115,7 +134,9 @@ pub fn scale_ladder(spec: &ScaleSpec) -> Vec<f64> {
         return vec![(low + high) / 2.0];
     }
     let step = (high - low) / (steps - 1) as f64;
-    (0..steps).map(|i| liverguard_ir::geometry::round_to(low + step * i as f64, 4)).collect()
+    (0..steps)
+        .map(|i| liverguard_ir::geometry::round_to(low + step * i as f64, 4))
+        .collect()
 }
 
 /// Coarse-to-fine search over a scale ladder.
@@ -145,7 +166,11 @@ pub fn multi_scale_match(
     // Only downscale when the work would be expensive.
     let work_area = iw as f64 * ih as f64 * tw as f64 * th as f64;
     let coarse = if work_area > 4_000_000.0 { 0.5 } else { 1.0 };
-    let search_coarse = if coarse != 1.0 { resize_by(search, coarse)? } else { search.try_clone()? };
+    let search_coarse = if coarse != 1.0 {
+        resize_by(search, coarse)?
+    } else {
+        search.try_clone()?
+    };
 
     let mut best: Option<(f64, f64, i32, i32)> = None;
     for &scale in scales {
@@ -154,16 +179,24 @@ pub fn multi_scale_match(
         if tpl.rows() > search_coarse.rows() || tpl.cols() > search_coarse.cols() {
             continue;
         }
-        let Some(result) = match_at_scale(&search_coarse, &tpl)? else { continue };
+        let Some(result) = match_at_scale(&search_coarse, &tpl)? else {
+            continue;
+        };
         let (max_val, loc) = max_loc(&result)?;
         if best.map_or(true, |b| max_val > b.0) {
             best = Some((max_val, scale, loc.x, loc.y));
         }
     }
 
-    let Some((_, best_scale, coarse_x, coarse_y)) = best else { return Ok(vec![]) };
+    let Some((_, best_scale, coarse_x, coarse_y)) = best else {
+        return Ok(vec![]);
+    };
 
-    let mut fine_scales = vec![(best_scale * 0.97).max(0.2), best_scale, (best_scale * 1.03).min(3.0)];
+    let mut fine_scales = vec![
+        (best_scale * 0.97).max(0.2),
+        best_scale,
+        (best_scale * 1.03).min(3.0),
+    ];
     fine_scales.sort_by(|a, b| a.partial_cmp(b).unwrap());
     fine_scales.dedup();
 
@@ -189,7 +222,9 @@ pub fn multi_scale_match(
         if tpl.rows() > window.rows() || tpl.cols() > window.cols() {
             continue;
         }
-        let Some(result) = match_at_scale(&window, &tpl)? else { continue };
+        let Some(result) = match_at_scale(&window, &tpl)? else {
+            continue;
+        };
         for peak in collect_peaks(&result, tpl.cols(), tpl.rows(), threshold, max_count)? {
             matches.push(Match {
                 x: peak.x + wx0 as f64,
@@ -207,7 +242,20 @@ pub fn multi_scale_match(
     Ok(matches)
 }
 
-pub fn single_scale_match(search: &Mat, template: &Mat, threshold: f64, max_count: usize) -> Result<Vec<Match>> {
-    let Some(result) = match_at_scale(search, template)? else { return Ok(vec![]) };
-    collect_peaks(&result, template.cols(), template.rows(), threshold, max_count)
+pub fn single_scale_match(
+    search: &Mat,
+    template: &Mat,
+    threshold: f64,
+    max_count: usize,
+) -> Result<Vec<Match>> {
+    let Some(result) = match_at_scale(search, template)? else {
+        return Ok(vec![]);
+    };
+    collect_peaks(
+        &result,
+        template.cols(),
+        template.rows(),
+        threshold,
+        max_count,
+    )
 }

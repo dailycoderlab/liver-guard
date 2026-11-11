@@ -4,10 +4,10 @@ use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
-use opencv::prelude::*;
-use opencv::core::{Mat, MatTraitConst, MatTraitConstManual, Size, Vector};
-use opencv::{imgcodecs, imgproc};
 use liverguard_ir::geometry::{py_round, Bounds, Rect};
+use opencv::core::{Mat, MatTraitConst, MatTraitConstManual, Size, Vector};
+use opencv::prelude::*;
+use opencv::{imgcodecs, imgproc};
 
 use crate::normalize::Normalized;
 use crate::util::{self, Result, VisionError};
@@ -85,7 +85,14 @@ impl Frame {
     /// how `doctor` tells "capturing" from "capturing a black rectangle".
     pub fn content_std(&self) -> Result<f64> {
         let mut small = Mat::default();
-        imgproc::resize(&self.image, &mut small, Size::new(64, 64), 0.0, 0.0, imgproc::INTER_AREA)?;
+        imgproc::resize(
+            &self.image,
+            &mut small,
+            Size::new(64, 64),
+            0.0,
+            0.0,
+            imgproc::INTER_AREA,
+        )?;
         util::std_dev(&small)
     }
 
@@ -98,7 +105,10 @@ impl Frame {
         if max_width > 0 && self.width() > max_width {
             let factor = max_width as f64 / self.width() as f64;
             let mut small = Mat::default();
-            let size = Size::new(max_width, ((self.height() as f64) * factor).round().max(1.0) as i32);
+            let size = Size::new(
+                max_width,
+                ((self.height() as f64) * factor).round().max(1.0) as i32,
+            );
             imgproc::resize(&self.image, &mut small, size, 0.0, 0.0, imgproc::INTER_AREA)?;
             return encode(&small, ".jpg", &params);
         }
@@ -113,7 +123,11 @@ impl Frame {
                 return Ok(cached.clone());
             }
         }
-        let value = Rc::new(crate::normalize::normalize_frame(&self.image, self.bounds, canonical_width)?);
+        let value = Rc::new(crate::normalize::normalize_frame(
+            &self.image,
+            self.bounds,
+            canonical_width,
+        )?);
         *self.normalized.borrow_mut() = Some((canonical_width, value.clone()));
         Ok(value)
     }
@@ -130,9 +144,19 @@ pub fn encode(image: &Mat, ext: &str, params: &Vector<i32>) -> Result<Vec<u8>> {
 
 fn compute_hash(image: &Mat) -> Result<String> {
     let mut small = Mat::default();
-    imgproc::resize(image, &mut small, Size::new(16, 16), 0.0, 0.0, imgproc::INTER_AREA)?;
+    imgproc::resize(
+        image,
+        &mut small,
+        Size::new(16, 16),
+        0.0,
+        0.0,
+        imgproc::INTER_AREA,
+    )?;
     let gray = util::to_gray(&small)?;
     let bytes = gray.data_bytes()?;
     let mean = bytes.iter().map(|&v| v as f64).sum::<f64>() / bytes.len() as f64;
-    Ok(bytes.iter().map(|&v| if v as f64 > mean { '1' } else { '0' }).collect())
+    Ok(bytes
+        .iter()
+        .map(|&v| if v as f64 > mean { '1' } else { '0' })
+        .collect())
 }

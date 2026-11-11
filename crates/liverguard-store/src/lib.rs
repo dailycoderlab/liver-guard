@@ -19,11 +19,11 @@ use std::sync::Mutex;
 use std::collections::BTreeMap;
 
 use base64::Engine as _;
+use liverguard_ir::IrDoc;
+use liverguard_notify::NotifyConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use liverguard_ir::IrDoc;
-use liverguard_notify::NotifyConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -91,13 +91,19 @@ pub fn default_root() -> PathBuf {
     if let Some(custom) = std::env::var_os("LIVERGUARD_HOME").filter(|v| !v.is_empty()) {
         return PathBuf::from(custom);
     }
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
-    home.unwrap_or_else(|| PathBuf::from(".")).join(".liverguard")
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".liverguard")
 }
 
 impl LocalStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), lock: Mutex::new(()) }
+        Self {
+            root: root.into(),
+            lock: Mutex::new(()),
+        }
     }
 
     pub fn open_default() -> Self {
@@ -113,12 +119,17 @@ impl LocalStore {
     }
 
     fn guard(&self) -> std::sync::MutexGuard<'_, ()> {
-        self.lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Ids are 32 lowercase hex digits; anything else could escape the directory.
     fn check_id(value: &str) -> Result<&str> {
-        let ok = value.len() == 32 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        let ok = value.len() == 32
+            && value
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if ok {
             Ok(value)
         } else {
@@ -127,7 +138,10 @@ impl LocalStore {
     }
 
     fn check_sha(value: &str) -> Result<&str> {
-        let ok = value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        let ok = value.len() == 64
+            && value
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if ok {
             Ok(value)
         } else {
@@ -136,7 +150,9 @@ impl LocalStore {
     }
 
     fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
-        let parent = path.parent().ok_or_else(|| StoreError::Invalid("path has no parent".into()))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| StoreError::Invalid("path has no parent".into()))?;
         fs::create_dir_all(parent)?;
         let temp = parent.join(format!(".liverguard-{}", uuid::Uuid::new_v4().simple()));
         let result = (|| -> std::io::Result<()> {
@@ -156,7 +172,10 @@ impl LocalStore {
     }
 
     fn script_path(&self, id: &str) -> Result<PathBuf> {
-        Ok(self.root.join("scripts").join(format!("{}.json", Self::check_id(id)?)))
+        Ok(self
+            .root
+            .join("scripts")
+            .join(format!("{}.json", Self::check_id(id)?)))
     }
 
     // ------------------------------------------------------------- settings
@@ -192,11 +211,22 @@ impl LocalStore {
                 continue;
             }
             // One unreadable file must not hide every other script.
-            if let Ok(record) = fs::read(&path).map_err(StoreError::from).and_then(|b| Ok(serde_json::from_slice::<ScriptRecord>(&b)?)) {
-                scripts.push(ScriptSummary { id: record.id, name: record.name });
+            if let Ok(record) = fs::read(&path)
+                .map_err(StoreError::from)
+                .and_then(|b| Ok(serde_json::from_slice::<ScriptRecord>(&b)?))
+            {
+                scripts.push(ScriptSummary {
+                    id: record.id,
+                    name: record.name,
+                });
             }
         }
-        scripts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
+        scripts.sort_by(|a, b| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(scripts)
     }
 
@@ -220,7 +250,11 @@ impl LocalStore {
             return Err(StoreError::Invalid("脚本名称不能为空".into()));
         }
         ir.meta.name = name.to_string();
-        let record = ScriptRecord { id: uuid::Uuid::new_v4().simple().to_string(), name: name.to_string(), ir };
+        let record = ScriptRecord {
+            id: uuid::Uuid::new_v4().simple().to_string(),
+            name: name.to_string(),
+            ir,
+        };
         let _guard = self.guard();
         Self::write_json(&self.script_path(&record.id)?, &record)?;
         Ok(record)
@@ -274,26 +308,39 @@ impl LocalStore {
                 continue;
             }
             let bytes = self.read_asset(&sha).map_err(|e| match e {
-                StoreError::NotFound(_) => StoreError::Invalid(format!("模板素材 {} 缺失，无法导出", &sha[..sha.len().min(8)])),
+                StoreError::NotFound(_) => StoreError::Invalid(format!(
+                    "模板素材 {} 缺失，无法导出",
+                    &sha[..sha.len().min(8)]
+                )),
                 other => other,
             })?;
             assets.insert(sha, base64::engine::general_purpose::STANDARD.encode(bytes));
         }
-        Ok(ScriptBundle { format: BUNDLE_FORMAT.into(), version: BUNDLE_VERSION, name: record.name, ir: record.ir, assets })
+        Ok(ScriptBundle {
+            format: BUNDLE_FORMAT.into(),
+            version: BUNDLE_VERSION,
+            name: record.name,
+            ir: record.ir,
+            assets,
+        })
     }
 
     /// Parse an export file's bytes and import it (see `import_bundle`).
     pub fn import_bytes(&self, bytes: &[u8]) -> Result<ScriptRecord> {
         // Check the envelope first so a random JSON file gets a useful message.
-        let value: Value = serde_json::from_slice(bytes).map_err(|_| StoreError::Invalid("不是有效的脚本文件（无法解析为 JSON）".into()))?;
+        let value: Value = serde_json::from_slice(bytes)
+            .map_err(|_| StoreError::Invalid("不是有效的脚本文件（无法解析为 JSON）".into()))?;
         if value["format"] != BUNDLE_FORMAT {
             return Err(StoreError::Invalid("不是 LiverGuard 导出的脚本文件".into()));
         }
         let version = value["version"].as_u64().unwrap_or(0);
         if version == 0 || version > u64::from(BUNDLE_VERSION) {
-            return Err(StoreError::Invalid(format!("脚本文件版本 {version} 不受支持，请升级 LiverGuard")));
+            return Err(StoreError::Invalid(format!(
+                "脚本文件版本 {version} 不受支持，请升级 LiverGuard"
+            )));
         }
-        let bundle: ScriptBundle = serde_json::from_value(value).map_err(|e| StoreError::Invalid(format!("脚本文件内容不完整：{e}")))?;
+        let bundle: ScriptBundle = serde_json::from_value(value)
+            .map_err(|e| StoreError::Invalid(format!("脚本文件内容不完整：{e}")))?;
         self.import_bundle(bundle)
     }
 
@@ -314,18 +361,29 @@ impl LocalStore {
             Self::check_sha(sha)?;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(text.trim())
-                .map_err(|_| StoreError::Invalid(format!("素材 {} 不是有效的 base64", &sha[..8])))?;
+                .map_err(|_| {
+                    StoreError::Invalid(format!("素材 {} 不是有效的 base64", &sha[..8]))
+                })?;
             if !bytes.starts_with(PNG_MAGIC) {
-                return Err(StoreError::Invalid(format!("素材 {} 不是 PNG 图片", &sha[..8])));
+                return Err(StoreError::Invalid(format!(
+                    "素材 {} 不是 PNG 图片",
+                    &sha[..8]
+                )));
             }
             if hex::encode(Sha256::digest(&bytes)) != *sha {
-                return Err(StoreError::Invalid(format!("素材 {} 校验失败，文件可能已损坏", &sha[..8])));
+                return Err(StoreError::Invalid(format!(
+                    "素材 {} 校验失败，文件可能已损坏",
+                    &sha[..8]
+                )));
             }
             decoded.push((sha.clone(), bytes));
         }
         for sha in bundle.ir.asset_hashes() {
             if !bundle.assets.contains_key(&sha) && !self.asset_path(&sha)?.exists() {
-                return Err(StoreError::Invalid(format!("脚本用到的模板素材 {} 不在文件里", &sha[..sha.len().min(8)])));
+                return Err(StoreError::Invalid(format!(
+                    "脚本用到的模板素材 {} 不在文件里",
+                    &sha[..sha.len().min(8)]
+                )));
             }
         }
 
@@ -335,14 +393,22 @@ impl LocalStore {
 
         let base = {
             let name = bundle.name.trim();
-            if name.is_empty() { "导入的脚本".to_string() } else { name.to_string() }
+            if name.is_empty() {
+                "导入的脚本".to_string()
+            } else {
+                name.to_string()
+            }
         };
         let taken: Vec<String> = self.list_scripts()?.into_iter().map(|s| s.name).collect();
         let mut name = base.clone();
         let mut n = 1;
         while taken.contains(&name) {
             n += 1;
-            name = if n == 2 { format!("{base}（导入）") } else { format!("{base}（导入 {}）", n - 1) };
+            name = if n == 2 {
+                format!("{base}（导入）")
+            } else {
+                format!("{base}（导入 {}）", n - 1)
+            };
         }
         self.create_script(&name, bundle.ir)
     }
@@ -378,12 +444,16 @@ impl LocalStore {
     }
 
     pub fn asset_path(&self, sha: &str) -> Result<PathBuf> {
-        Ok(self.assets_dir().join(format!("{}.png", Self::check_sha(sha)?)))
+        Ok(self
+            .assets_dir()
+            .join(format!("{}.png", Self::check_sha(sha)?)))
     }
 
     pub fn read_asset(&self, sha: &str) -> Result<Vec<u8>> {
         fs::read(self.asset_path(sha)?).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => StoreError::NotFound(format!("asset {}", &sha[..sha.len().min(8)])),
+            std::io::ErrorKind::NotFound => {
+                StoreError::NotFound(format!("asset {}", &sha[..sha.len().min(8)]))
+            }
             _ => e.into(),
         })
     }
@@ -412,7 +482,9 @@ impl LocalStore {
                 continue;
             }
             let Ok(bytes) = fs::read(&path) else { continue };
-            let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else { continue };
+            let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
+                continue;
+            };
             let mut summary = value["record"].take();
             if let (Some(map), Some(id)) = (summary.as_object_mut(), value["id"].as_str()) {
                 map.insert("id".into(), Value::String(id.to_string()));
@@ -425,7 +497,10 @@ impl LocalStore {
 
     pub fn get_run(&self, id: &str) -> Result<Value> {
         let _guard = self.guard();
-        let path = self.root.join("runs").join(format!("{}.json", Self::check_id(id)?));
+        let path = self
+            .root
+            .join("runs")
+            .join(format!("{}.json", Self::check_id(id)?));
         let bytes = fs::read(&path).map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => StoreError::NotFound(format!("run {id}")),
             _ => e.into(),
@@ -450,7 +525,12 @@ mod tests {
         let b = store.create_script("Beta", IrDoc::empty("x")).unwrap();
         let a = store.create_script("alpha", IrDoc::empty("x")).unwrap();
 
-        let names: Vec<_> = store.list_scripts().unwrap().into_iter().map(|s| s.name).collect();
+        let names: Vec<_> = store
+            .list_scripts()
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
         assert_eq!(names, vec!["alpha", "Beta"]);
         assert_eq!(store.get_script(&a.id).unwrap().ir.meta.name, "alpha");
 
@@ -458,7 +538,10 @@ mod tests {
         assert_eq!(store.get_script(&b.id).unwrap().ir.meta.name, "Gamma");
 
         store.delete_script(&a.id).unwrap();
-        assert!(matches!(store.get_script(&a.id), Err(StoreError::NotFound(_))));
+        assert!(matches!(
+            store.get_script(&a.id),
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     #[test]
@@ -485,7 +568,10 @@ mod tests {
         assert_ne!(copy.id, original.id);
         assert_eq!(copy.name, "One 副本");
         assert_eq!(copy.ir.meta.name, "One 副本");
-        assert_eq!(store.get_script(&copy.id).unwrap().ir.meta.game.as_deref(), Some("g"));
+        assert_eq!(
+            store.get_script(&copy.id).unwrap().ir.meta.game.as_deref(),
+            Some("g")
+        );
 
         // The original is untouched and both are listed.
         assert_eq!(store.get_script(&original.id).unwrap().name, "One");
@@ -496,7 +582,10 @@ mod tests {
         assert_eq!(store.get_script(&original.id).unwrap().ir.meta.name, "One");
 
         assert!(store.duplicate_script(&original.id, "  ").is_err());
-        assert!(matches!(store.duplicate_script(&"a".repeat(32), "x"), Err(StoreError::NotFound(_))));
+        assert!(matches!(
+            store.duplicate_script(&"a".repeat(32), "x"),
+            Err(StoreError::NotFound(_))
+        ));
         assert!(store.duplicate_script("../x", "x").is_err());
     }
 
@@ -508,7 +597,11 @@ mod tests {
         let mut ir = IrDoc::empty(name);
         ir.targets.insert(
             "ok".into(),
-            liverguard_ir::Target::Template(liverguard_ir::TemplateTarget::new(sha.clone(), liverguard_ir::AssetBox { w: 10.0, h: 10.0 }, [0.0, 0.0, 1.0, 1.0])),
+            liverguard_ir::Target::Template(liverguard_ir::TemplateTarget::new(
+                sha.clone(),
+                liverguard_ir::AssetBox { w: 10.0, h: 10.0 },
+                [0.0, 0.0, 1.0, 1.0],
+            )),
         );
         (store.create_script(name, ir).unwrap(), sha)
     }
@@ -531,7 +624,10 @@ mod tests {
         assert_eq!(imported.name, "Quest");
         assert_eq!(imported.ir.meta.name, "Quest");
         assert_eq!(imported.ir.targets.len(), 1);
-        assert_eq!(target.read_asset(&sha).unwrap(), source.read_asset(&sha).unwrap());
+        assert_eq!(
+            target.read_asset(&sha).unwrap(),
+            source.read_asset(&sha).unwrap()
+        );
         assert_eq!(target.list_scripts().unwrap().len(), 1);
     }
 
@@ -561,22 +657,33 @@ mod tests {
 
         let mut newer = good.clone();
         newer.version = BUNDLE_VERSION + 1;
-        assert!(target.import_bytes(&serde_json::to_vec(&newer).unwrap()).is_err());
+        assert!(target
+            .import_bytes(&serde_json::to_vec(&newer).unwrap())
+            .is_err());
 
         // Image bytes that do not match the hash they are filed under.
         let mut tampered = good.clone();
-        tampered.assets.insert(sha.clone(), base64::engine::general_purpose::STANDARD.encode([PNG_MAGIC, b"other"].concat()));
-        assert!(target.import_bytes(&serde_json::to_vec(&tampered).unwrap()).is_err());
+        tampered.assets.insert(
+            sha.clone(),
+            base64::engine::general_purpose::STANDARD.encode([PNG_MAGIC, b"other"].concat()),
+        );
+        assert!(target
+            .import_bytes(&serde_json::to_vec(&tampered).unwrap())
+            .is_err());
 
         // The script needs an image the file does not carry (and the store lacks).
         let mut missing = good.clone();
         missing.assets.clear();
-        assert!(target.import_bytes(&serde_json::to_vec(&missing).unwrap()).is_err());
+        assert!(target
+            .import_bytes(&serde_json::to_vec(&missing).unwrap())
+            .is_err());
 
         // An old IR version.
         let mut old = good;
         old.ir.ir_version = 2;
-        assert!(target.import_bytes(&serde_json::to_vec(&old).unwrap()).is_err());
+        assert!(target
+            .import_bytes(&serde_json::to_vec(&old).unwrap())
+            .is_err());
 
         assert!(target.list_scripts().unwrap().is_empty());
         assert!(!dir.path().join("assets").exists());
@@ -638,8 +745,15 @@ mod tests {
     #[test]
     fn runs_list_newest_first() {
         let (_dir, store) = store();
-        store.save_run(serde_json::json!({ "startedAt": 1, "state": "done" }), "a").unwrap();
-        let newest = store.save_run(serde_json::json!({ "startedAt": 9, "state": "failed" }), "b").unwrap();
+        store
+            .save_run(serde_json::json!({ "startedAt": 1, "state": "done" }), "a")
+            .unwrap();
+        let newest = store
+            .save_run(
+                serde_json::json!({ "startedAt": 9, "state": "failed" }),
+                "b",
+            )
+            .unwrap();
         let runs = store.list_runs().unwrap();
         assert_eq!(runs[0]["id"], newest.as_str());
         assert_eq!(runs[0]["state"], "failed");
@@ -650,7 +764,13 @@ mod tests {
     fn a_corrupt_script_does_not_hide_the_others() {
         let (dir, store) = store();
         store.create_script("fine", IrDoc::empty("x")).unwrap();
-        fs::write(dir.path().join("scripts").join(format!("{}.json", "a".repeat(32))), b"{not json").unwrap();
+        fs::write(
+            dir.path()
+                .join("scripts")
+                .join(format!("{}.json", "a".repeat(32))),
+            b"{not json",
+        )
+        .unwrap();
         assert_eq!(store.list_scripts().unwrap().len(), 1);
     }
 }
